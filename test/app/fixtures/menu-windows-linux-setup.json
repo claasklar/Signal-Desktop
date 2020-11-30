@@ -10,6 +10,10 @@
         "type": "separator"
       },
       {
+        "label": "Set Up as Standalone Device",
+        "click": null
+      },
+      {
         "label": "Create/upload sticker pack",
         "click": null
       },
