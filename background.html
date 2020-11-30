@@ -307,6 +307,25 @@
     {{/isError}}
   </script>
 
+  <script type='text/x-tmpl-mustache' id='addDevice'>
+    <div class='step'>
+      <a class='x close' alt='close addDevice' href='#'></a>
+      <div class='inner'>
+        <div class='step-body'>
+          <div class='header'>{{linkNewDevice}}</div>
+          <div class='statusMessage'></div>
+          <div class='link-input-form' id='url'>
+            <input type='text' class='deviceIdentifier' placeholder='{{ deviceIdentifier }}'/>
+            <input type='text' class='deviceKey' placeholder='{{ deviceKey }}'/>
+          </div>
+          <div>
+            <a class="button" id="addDeviceButton">{{ linkNewDeviceButton }}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </script>
+
   <script type='text/x-tmpl-mustache' id='standalone'>
     <div class='step'>
       <div class='inner'>
