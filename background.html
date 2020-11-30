@@ -326,6 +326,21 @@
     </div>
   </script>
 
+  <script type='text/x-tmpl-mustache' id='manageDevices'>
+    <div class='step'>
+    <a class='x close' alt='close addDevice' href='#'></a>
+    <div class='inner'>
+      <div class='step-body'>
+        <div class='header'>{{linkedDevices}}</div>
+        <table id='linkedDevicesTable'>
+        </table>
+      </div>
+      <div class='step-body'>
+        <a class="button">{{linkNewDevice}}</a>
+      </div>
+    </div>
+    </div>
+  </script>
 
   <script type='text/x-tmpl-mustache' id='deviceListRow'>
     <tr>
