@@ -21,7 +21,7 @@
     render_attributes() {
       return {
         name: this.model.get('name'),
-        deleteLabeln: i18n("delete")
+        deleteLabel: i18n('delete'),
       };
     },
     events: {
