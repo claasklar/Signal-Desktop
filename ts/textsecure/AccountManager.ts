@@ -768,4 +768,9 @@ export default class AccountManager extends EventTarget {
   async removeDevice(id: string): Promise<void> {
     return this.server.removeDevice(id);
   }
+
+  isStandaloneDevice(): boolean {
+    const name = window.textsecure.storage.user.getDeviceName();
+    return name === undefined || name === null;
+  }
 }
