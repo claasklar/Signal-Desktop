@@ -797,6 +797,7 @@ export type WebAPIType = {
   ) => Promise<string>;
   registerKeys: (genKeys: KeysType) => Promise<void>;
   registerSupportForUnauthenticatedDelivery: () => Promise<any>;
+  removeDevice: (id: string) => Promise<void>;
   removeSignalingKey: () => Promise<void>;
   requestVerificationSMS: (number: string) => Promise<any>;
   requestVerificationVoice: (number: string) => Promise<any>;
@@ -972,6 +973,7 @@ export function initialize({
       registerCapabilities,
       registerKeys,
       registerSupportForUnauthenticatedDelivery,
+      removeDevice,
       removeSignalingKey,
       requestVerificationSMS,
       requestVerificationVoice,
@@ -1800,6 +1802,14 @@ export function initialize({
         responseType: 'json',
         httpType: 'PUT',
         jsonData: data,
+      });
+    }
+
+    async function removeDevice(id: string) {
+      return _ajax({
+        call: 'devices',
+        urlParameters: `/${id}`,
+        httpType: 'DELETE',
       });
     }
 

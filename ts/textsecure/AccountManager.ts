@@ -764,4 +764,8 @@ export default class AccountManager extends EventTarget {
 
     this.dispatchEvent(new Event('registration'));
   }
+
+  async removeDevice(id: string): Promise<void> {
+    return this.server.removeDevice(id);
+  }
 }
