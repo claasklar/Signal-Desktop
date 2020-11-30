@@ -14,6 +14,7 @@ import ProvisioningCipher from './ProvisioningCipher';
 import WebSocketResource, {
   IncomingWebSocketRequest,
 } from './WebsocketResources';
+import StringView from './StringView';
 
 const ARCHIVE_AGE = 7 * 24 * 60 * 60 * 1000;
 
@@ -131,6 +132,40 @@ export default class AccountManager extends EventTarget {
     if (key) {
       await this.server.removeSignalingKey();
     }
+  }
+
+  async addDevice(deviceIdentifier: string, deviceKey: string): Promise<any> {
+    return this.server.getNewDeviceVerificationCode().then(response => {
+      return Promise.all([
+        window.textsecure.storage.protocol.getIdentityKeyPair(),
+        window.textsecure.storage.protocol.getProfileKey(),
+      ]).then(values => {
+        const identityKeyPair = values[0];
+        const profileKey = values[1];
+
+        const deviceKeyBytes = StringView.base64ToBytes(deviceKey);
+
+        const code = response.verificationCode;
+        if (!code) {
+          throw new Error('Could not retrieve new device verification code');
+        }
+
+        const provisionMessage = new window.textsecure.protobuf.ProvisionMessage();
+        provisionMessage.identityKeyPrivate = identityKeyPair.privKey;
+        provisionMessage.number = window.textsecure.storage.user.getNumber();
+        provisionMessage.provisioningCode = code;
+        provisionMessage.profileKey = profileKey;
+
+        const provisioningCipher = new ProvisioningCipher();
+        return provisioningCipher
+          .encrypt(provisionMessage, deviceKeyBytes)
+          .then(provisionEnvelope =>
+            this.server.linkOtherDevice(deviceIdentifier, {
+              body: provisionEnvelope.encode64(),
+            })
+          );
+      });
+    });
   }
 
   async registerSingleDevice(number: string, verificationCode: string) {

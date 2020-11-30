@@ -229,7 +229,14 @@
         ),
       ]);
     },
+    async getProfileKey() {
+      const item = await window.Signal.Data.getItemById('profileKey');
+      if (item) {
+        return item.value;
+      }
 
+      return undefined;
+    },
     async getIdentityKeyPair() {
       return this.ourIdentityKey;
     },

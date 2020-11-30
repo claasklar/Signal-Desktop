@@ -148,6 +148,7 @@ export type StorageProtocolType = StorageType & {
   removeAllData: () => Promise<void>;
   on: (key: string, callback: () => void) => WhatIsThis;
   removeAllConfiguration: () => Promise<void>;
+  getProfileKey: () => Promise<string>;
 };
 
 // Protobufs
@@ -817,13 +818,14 @@ export declare class ProvisionEnvelopeClass {
     encoding?: string
   ) => ProvisionEnvelopeClass;
   encode: () => ProvisionEnvelopeClass;
+  encode64: () => string;
   toArrayBuffer: () => ArrayBuffer;
 
   publicKey?: ProtoBinaryType;
   body?: ProtoBinaryType;
 }
 
-declare class ProvisionMessageClass {
+export declare class ProvisionMessageClass {
   static decode: (
     data: ArrayBuffer | ByteBufferClass,
     encoding?: string

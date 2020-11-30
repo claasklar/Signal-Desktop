@@ -24,7 +24,7 @@ const StringView = {
               : 0;
   },
 
-  base64ToBytes(sBase64: string, nBlocksSize: number): ArrayBuffer {
+  base64ToBytes(sBase64: string, nBlocksSize?: number): ArrayBuffer {
     const sB64Enc = sBase64.replace(/[^A-Za-z0-9+/]/g, '');
     const nInLen = sB64Enc.length;
     const nOutLen = nBlocksSize

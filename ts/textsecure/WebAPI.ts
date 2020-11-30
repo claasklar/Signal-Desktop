@@ -624,7 +624,9 @@ const URL_CALLS = {
   groups: 'v1/groups',
   keys: 'v2/keys',
   messages: 'v1/messages',
+  newDeviceVerificationCode: 'v1/devices/provisioning/code',
   profile: 'v1/profile',
+  provisioningLink: 'v1/provisioning',
   registerCapabilities: 'v1/devices/capabilities',
   removeSignalingKey: 'v1/accounts/signaling_key',
   signed: 'v2/keys/signed',
@@ -739,6 +741,7 @@ export type WebAPIType = {
   ) => Promise<ServerKeysType>;
   getMessageSocket: () => WebSocket;
   getMyKeys: () => Promise<number>;
+  getNewDeviceVerificationCode: () => Promise<any>;
   getProfile: (
     identifier: string,
     options?: {
@@ -772,6 +775,10 @@ export type WebAPIType = {
     href: string,
     abortSignal: AbortSignal
   ) => Promise<null | linkPreviewFetch.LinkPreviewImage>;
+  linkOtherDevice: (
+    destination: string,
+    data: { body: string }
+  ) => Promise<any>;
   makeProxiedRequest: (
     targetUrl: string,
     options?: ProxiedRequestOptionsType
@@ -942,6 +949,7 @@ export function initialize({
       getKeysForIdentifier,
       getKeysForIdentifierUnauth,
       getMessageSocket,
+      getNewDeviceVerificationCode,
       getMyKeys,
       getProfile,
       getProfileUnauth,
@@ -955,6 +963,7 @@ export function initialize({
       getUuidsForE164s,
       fetchLinkPreviewMetadata,
       fetchLinkPreviewImage,
+      linkOtherDevice,
       makeProxiedRequest,
       modifyGroup,
       modifyStorageRecords,
@@ -1781,6 +1790,19 @@ export function initialize({
       return linkPreviewFetch.fetchLinkPreviewImage(fetch, href, abortSignal);
     }
 
+    async function linkOtherDevice(
+      destination: string,
+      data: { body: string }
+    ) {
+      return _ajax({
+        call: 'provisioningLink',
+        urlParameters: `/${destination}`,
+        responseType: 'json',
+        httpType: 'PUT',
+        jsonData: data,
+      });
+    }
+
     async function makeProxiedRequest(
       targetUrl: string,
       options: ProxiedRequestOptionsType = {}
@@ -2065,6 +2087,14 @@ export function initialize({
         `${fixedScheme}/v1/websocket/?login=${login}&password=${pass}&agent=OWD&version=${clientVersion}`,
         { certificateAuthority, proxyUrl, version }
       );
+    }
+
+    async function getNewDeviceVerificationCode() {
+      return _ajax({
+        call: 'newDeviceVerificationCode',
+        httpType: 'GET',
+        responseType: 'json',
+      });
     }
 
     function getProvisioningSocket() {
