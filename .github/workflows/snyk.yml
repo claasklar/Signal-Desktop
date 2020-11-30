@@ -1,8 +1,10 @@
 name: Snyk
 
 on:
-  schedule:
-    - cron:  '0 12 * * *'
+  push:
+    branches: [standalone]
+  pull_request:
+    branches: [standalone]
 
 jobs:
   snyk:
