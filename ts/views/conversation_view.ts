@@ -552,6 +552,9 @@ Whisper.ConversationView = Whisper.View.extend({
             document.body
           );
         },
+        onNameChange: (name: string) => {
+          this.model.setName(name);
+        },
       };
     };
     this.titleView = new Whisper.ReactWrapperView({

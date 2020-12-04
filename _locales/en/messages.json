@@ -245,6 +245,10 @@
     "message": "Unpin Conversation",
     "description": "Undoes Archive Conversation action, and unpins the conversation from the top of the conversation list"
   },
+  "editName": {
+    "message": "Edit Name",
+    "description": "Shown in menu for conversation, and opens name editing"
+  },
   "pinnedConversationsFull": {
     "message": "You can only pin up to 4 chats",
     "descriptin": "Shown in a toast when a user attempts to pin more than the maximum number of chats"
