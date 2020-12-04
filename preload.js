@@ -128,6 +128,10 @@ try {
     Whisper.events.trigger('setupAsStandalone');
   });
 
+  ipc.on('manage-devices', () => {
+    Whisper.events.trigger('manageDevices');
+  });
+
   // Settings-related events
 
   window.showSettings = () => ipc.send('show-settings');

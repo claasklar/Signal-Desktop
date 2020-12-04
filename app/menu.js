@@ -16,6 +16,7 @@ exports.createTemplate = (options, messages) => {
     platform,
     setupAsNewDevice,
     setupAsStandalone,
+    manageDevices,
     showAbout,
     showDebugLog,
     showKeyboardShortcuts,
@@ -199,6 +200,17 @@ exports.createTemplate = (options, messages) => {
       label: messages.menuSetupAsNewDevice.message,
       click: setupAsNewDevice,
     });
+  } else {
+    const fileMenu = template[0];
+    fileMenu.submenu.unshift(
+      {
+        label: messages.menuManageDevices.message,
+        click: manageDevices,
+      },
+      {
+        type: 'separator',
+      }
+    );
   }
 
   if (platform === 'darwin') {

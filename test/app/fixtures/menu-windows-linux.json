@@ -3,6 +3,13 @@
     "label": "&File",
     "submenu": [
       {
+        "label": "Manage Devices",
+        "click": null
+      },
+      {
+        "type": "separator"
+      },
+      {
         "label": "Create/upload sticker pack",
         "click": null
       },

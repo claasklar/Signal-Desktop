@@ -1463,6 +1463,20 @@ type WhatIsThis = typeof window.WhatIsThis;
     }
   });
 
+  window.Whisper.events.on('manageDevices', () => {
+    const { appView } = window.owsDesktopApp;
+    if (appView) {
+      appView.openManageDevices();
+    }
+  });
+
+  window.Whisper.events.on('addDevice', () => {
+    const { appView } = window.owsDesktopApp;
+    if (appView) {
+      appView.openAddDevice();
+    }
+  });
+
   function runStorageService() {
     window.Signal.Services.enableStorageService();
     window.textsecure.messaging.sendRequestKeySyncMessage();

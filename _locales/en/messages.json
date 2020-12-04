@@ -171,6 +171,10 @@
     "message": "View Archive",
     "description": "One of the menu options available in the Avatar Popup menu"
   },
+  "menuManageDevices": {
+    "message": "Manage Devices",
+    "description": "Open Window for managing linked devices"
+  },
   "addDeviceSuccess": {
     "message": "Adding new device succeeded",
     "description": "Adding new device succeeded"

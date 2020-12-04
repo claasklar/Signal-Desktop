@@ -47,6 +47,7 @@ describe('SignalMenu', () => {
               };
               const options = {
                 isBeta: false,
+                manageDevices: null,
                 openContactUs: null,
                 openForums: null,
                 openJoinTheBeta: null,
