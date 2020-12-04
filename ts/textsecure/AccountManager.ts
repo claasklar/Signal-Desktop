@@ -765,6 +765,21 @@ export default class AccountManager extends EventTarget {
     this.dispatchEvent(new Event('registration'));
   }
 
+  async getDevices(): Promise<Array<any>> {
+    return this.server.getDevices().then(jsonList => {
+      const list = JSON.parse(jsonList);
+
+      return (list.devices as Array<{ id: string; name: string }>)
+        .filter(device => device.name != null)
+        .map(device => {
+          return {
+            id: device.id,
+            name: this.decryptDeviceName(device.name),
+          };
+        });
+    });
+  }
+
   async removeDevice(id: string): Promise<void> {
     return this.server.removeDevice(id);
   }
