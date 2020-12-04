@@ -93,9 +93,9 @@
       this.openView(this.manageDevicesView);
     },
     openAddDevice() {
-     this.resetViews();
-     this.addDeviceView = new Whisper.AddDeviceView();
-     this.openView(this.addDeviceView);
+      this.resetViews();
+      this.addDeviceView = new Whisper.AddDeviceView();
+      this.openView(this.addDeviceView);
     },
     closeStandalone() {
       if (this.standaloneView) {
