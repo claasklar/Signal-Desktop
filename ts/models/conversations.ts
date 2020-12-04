@@ -4154,6 +4154,13 @@ export class ConversationModel extends window.Backbone.Model<
     return;
   }
 
+  setName(name: string): void {
+    if (name && name !== this.getName()) {
+      this.set({ name });
+      window.Signal.Data.updateConversation(this.attributes);
+    }
+  }
+
   pin(): void {
     window.log.info('pinning', this.idForLogging());
     const pinnedConversationIds = new Set(
