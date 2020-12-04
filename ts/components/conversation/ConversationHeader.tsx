@@ -14,6 +14,7 @@ import { InContactsIcon } from '../InContactsIcon';
 import { LocalizerType } from '../../types/Util';
 import { ColorType } from '../../types/Colors';
 import { getMuteOptions } from '../../util/getMuteOptions';
+import { NameInput } from './NameInput';
 
 interface TimerOption {
   name: string;
@@ -61,6 +62,7 @@ export interface PropsActionsType {
 
   onArchive: () => void;
   onMoveToInbox: () => void;
+  onNameChange: (name: string) => void;
 }
 
 export interface PropsHousekeepingType {
@@ -71,7 +73,11 @@ export type PropsType = PropsDataType &
   PropsActionsType &
   PropsHousekeepingType;
 
-export class ConversationHeader extends React.Component<PropsType> {
+type StateType = {
+  isInTitleEdit: boolean;
+};
+
+export class ConversationHeader extends React.Component<PropsType, StateType> {
   public showMenuBound: (event: React.MouseEvent<HTMLButtonElement>) => void;
 
   // Comes from a third-party dependency
@@ -83,6 +89,8 @@ export class ConversationHeader extends React.Component<PropsType> {
 
     this.menuTriggerRef = React.createRef();
     this.showMenuBound = this.showMenu.bind(this);
+
+    this.state = { isInTitleEdit: false };
   }
 
   public showMenu(event: React.MouseEvent<HTMLButtonElement>): void {
@@ -118,7 +126,10 @@ export class ConversationHeader extends React.Component<PropsType> {
       isMe,
       profileName,
       isVerified,
+      onNameChange,
     } = this.props;
+
+    const { isInTitleEdit } = this.state;
 
     if (isMe) {
       return (
@@ -130,6 +141,19 @@ export class ConversationHeader extends React.Component<PropsType> {
 
     const shouldShowIcon = Boolean(name && type === 'direct');
     const shouldShowNumber = Boolean(phoneNumber && (name || profileName));
+
+    if (isInTitleEdit) {
+      return (
+        <NameInput
+          name={name || ''}
+          i18n={i18n}
+          onNameChange={(changedName: string) => {
+            onNameChange(changedName);
+            this.setState({ isInTitleEdit: false });
+          }}
+        />
+      );
+    }
 
     return (
       <div className="module-conversation-header__title">
@@ -408,6 +432,9 @@ export class ConversationHeader extends React.Component<PropsType> {
           </MenuItem>
         )}
         <MenuItem onClick={onDeleteMessages}>{i18n('deleteMessages')}</MenuItem>
+        <MenuItem onClick={() => this.setState({ isInTitleEdit: true })}>
+          {i18n('editName')}
+        </MenuItem>
       </ContextMenu>
     );
   }
