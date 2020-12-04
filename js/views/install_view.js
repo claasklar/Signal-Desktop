@@ -170,6 +170,18 @@
       this.$('#qr .container').hide();
       this.qr = new QRCode(this.$('#qr')[0]).makeCode(url);
       this.$('#qr').removeAttr('title');
+
+      const queries = url.split('?')[1].split('&');
+      const params = {};
+      queries.forEach(queryParam => {
+        const [paramKey, paramValue] = queryParam.split('=');
+        params[paramKey] = paramValue;
+      });
+      this.$('#url .deviceIdentifier').text(params.uuid);
+      this.$('#url .deviceKey').text(params.pub_key);
+
+      this.$('#qr').addClass('ready');
+
       this.$('#qr').addClass('ready');
     },
     setDeviceNameDefault() {

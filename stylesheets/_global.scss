@@ -98,6 +98,11 @@ audio {
   display: none;
 }
 
+.tableButton {
+  margin: 0em !important;
+  padding: 0em !important;
+}
+
 button {
   cursor: pointer;
   font-size: inherit;
@@ -297,6 +302,25 @@ $loading-height: 16px;
   }
 }
 
+.x {
+  display: inline-block;
+  float: right;
+  cursor: pointer;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  background: $color-gray-60;
+
+  &:before {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 100%;
+    @include color-svg('../images/icons/v2/x-24.svg', $color-white);
+  }
+}
+
 @keyframes loading {
   50% {
     transform: scale(1);
@@ -463,6 +487,23 @@ $loading-height: 16px;
     &.android {
       @include color-svg('../images/full-screen-flow/android.svg', black);
     }
+  }
+
+  .statusMessage {
+    padding-top: 0.3em;
+    padding-bottom: 0.3em;
+
+    font-size: 27px;
+  }
+
+  .error {
+    color: #d8000c;
+    background-color: #ffd2d2;
+  }
+
+  .success {
+    background-color: #00e600;
+    color: #006600;
   }
 
   .header {

@@ -577,6 +577,12 @@ function setupAsStandalone() {
   }
 }
 
+function manageDevices() {
+  if (mainWindow) {
+    mainWindow.webContents.send('manage-devices');
+  }
+}
+
 let aboutWindow;
 function showAbout() {
   if (aboutWindow) {
@@ -1034,6 +1040,7 @@ function setupMenu(options) {
     platform,
     setupAsNewDevice,
     setupAsStandalone,
+    manageDevices,
   };
   const template = createTemplate(menuOptions, locale.messages);
   const menu = Menu.buildFromTemplate(template);

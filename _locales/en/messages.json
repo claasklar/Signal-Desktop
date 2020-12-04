@@ -171,6 +171,30 @@
     "message": "View Archive",
     "description": "One of the menu options available in the Avatar Popup menu"
   },
+  "menuManageDevices": {
+    "message": "Manage Devices",
+    "description": "Open Window for managing linked devices"
+  },
+  "addDeviceSuccess": {
+    "message": "Adding new device succeeded",
+    "description": "Adding new device succeeded"
+  },
+  "linkNewDevice": {
+    "message": "Link an Other Computer",
+    "description": "Heading for add_device_view"
+  },
+  "linkNewDeviceButton": {
+    "message": "Link Device",
+    "description": "Link Device Button in add_device_view"
+  },
+  "deviceIdentifier": {
+    "message": "Device Identifier",
+    "description": "Placeholder in add_device_view for deviceIdentifier input field"
+  },
+  "deviceKey": {
+    "message": "DeviceKey",
+    "description": "Placeholder in add_device_view for deviceKey input field"
+  },
   "loading": {
     "message": "Loading...",
     "description": "Message shown on the loading screen before we've loaded any messages"
