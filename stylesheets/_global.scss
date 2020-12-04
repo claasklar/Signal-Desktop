@@ -489,6 +489,23 @@ $loading-height: 16px;
     }
   }
 
+  .statusMessage {
+    padding-top: 0.3em;
+    padding-bottom: 0.3em;
+
+    font-size: 27px;
+  }
+
+  .error {
+    color: #d8000c;
+    background-color: #ffd2d2;
+  }
+
+  .success {
+    background-color: #00e600;
+    color: #006600;
+  }
+
   .header {
     font-weight: normal;
     margin-bottom: 1.5em;
