@@ -406,6 +406,20 @@ type WhatIsThis = typeof window.WhatIsThis;
         window.storage.put('spell-check', value);
       },
 
+      getReadReceiptSetting: () => window.storage.get('read-receipt-setting'),
+      setReadReceiptSetting: (value: boolean) =>
+        window.storage.put('read-receipt-setting', value),
+      getUnidentifiedDeliveryIndicatorSetting: () =>
+        window.storage.get('unidentifiedDeliveryIndicators'),
+      setUnidentifiedDeliveryIndicatorSetting: (value: boolean) =>
+        window.storage.put('unidentifiedDeliveryIndicators', value),
+      getTypingIndicatorSetting: () => window.storage.get('typingIndicators'),
+      setTypingIndicatorSetting: (value: boolean) =>
+        window.storage.put('typingIndicators', value),
+      getLinkPreviewSetting: () => window.storage.get('linkPreviews'),
+      setLinkPreviewSetting: (value: boolean) =>
+        window.storage.put('linkPreviews', value),
+
       getAlwaysRelayCalls: () => window.storage.get('always-relay-calls'),
       setAlwaysRelayCalls: (value: WhatIsThis) =>
         window.storage.put('always-relay-calls', value),

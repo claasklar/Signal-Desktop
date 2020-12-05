@@ -1277,6 +1277,15 @@ installSettingsSetter('badge-count-muted-conversations');
 installSettingsGetter('spell-check');
 installSettingsSetter('spell-check');
 
+installSettingsGetter('read-receipt-setting');
+installSettingsSetter('read-receipt-setting');
+installSettingsGetter('unidentified-delivery-indicator-setting');
+installSettingsSetter('unidentified-delivery-indicator-setting');
+installSettingsGetter('typing-indicator-setting');
+installSettingsSetter('typing-indicator-setting');
+installSettingsGetter('link-preview-setting');
+installSettingsSetter('link-preview-setting');
+
 installSettingsGetter('always-relay-calls');
 installSettingsSetter('always-relay-calls');
 installSettingsGetter('call-ringtone-notification');

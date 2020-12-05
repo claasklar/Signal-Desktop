@@ -189,6 +189,21 @@ try {
   installGetter('spell-check', 'getSpellCheck');
   installSetter('spell-check', 'setSpellCheck');
 
+  installGetter('read-receipt-setting', 'getReadReceiptSetting');
+  installSetter('read-receipt-setting', 'setReadReceiptSetting');
+  installGetter(
+    'unidentified-delivery-indicator-setting',
+    'getUnidentifiedDeliveryIndicatorSetting'
+  );
+  installSetter(
+    'unidentified-delivery-indicator-setting',
+    'setUnidentifiedDeliveryIndicatorSetting'
+  );
+  installGetter('typing-indicator-setting', 'getTypingIndicatorSetting');
+  installSetter('typing-indicator-setting', 'setTypingIndicatorSetting');
+  installGetter('link-preview-setting', 'getLinkPreviewSetting');
+  installSetter('link-preview-setting', 'setLinkPreviewSetting');
+
   installGetter('always-relay-calls', 'getAlwaysRelayCalls');
   installSetter('always-relay-calls', 'setAlwaysRelayCalls');
 
