@@ -82,6 +82,19 @@ window.setMediaPermissions = makeSetter('media-permissions');
 window.getMediaCameraPermissions = makeGetter('media-camera-permissions');
 window.setMediaCameraPermissions = makeSetter('media-camera-permissions');
 
+window.getReadReceiptSetting = makeGetter('read-receipt-setting');
+window.setReadReceiptSetting = makeSetter('read-receipt-setting');
+window.getUnidentifiedDeliveryIndicatorSetting = makeGetter(
+  'unidentified-delivery-indicator-setting'
+);
+window.setUnidentifiedDeliveryIndicatorSetting = makeSetter(
+  'unidentified-delivery-indicator-setting'
+);
+window.getTypingIndicatorSetting = makeGetter('typing-indicator-setting');
+window.setTypingIndicatorSetting = makeSetter('typing-indicator-setting');
+window.getLinkPreviewSetting = makeGetter('link-preview-setting');
+window.setLinkPreviewSetting = makeSetter('link-preview-setting');
+
 window.isPrimary = makeGetter('is-primary');
 window.makeSyncRequest = makeGetter('sync-request');
 window.getLastSyncTime = makeGetter('sync-time');

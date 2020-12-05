@@ -152,6 +152,25 @@
         <label for='media-camera-permissions'>{{ mediaCameraPermissionsDescription }}</label>
       </div>
     </div>
+    <div class='privacy-setting'>
+      <h3>{{ privacySettings }}</h3>
+      <div class='read-receipt-setting'>
+        <input type='checkbox' name='read-receipt-setting' id='read-receipt-setting'/>
+        <label for='read-receipt-setting'>{{ sendReadReceipts }}</label>
+      </div>
+      <div class='unidentified-delivery-indicator-setting'>
+        <input type='checkbox' name='unidentified-delivery-indicator-setting' id='unidentified-delivery-indicator-setting'/>
+        <label for='unidentified-delivery-indicator-setting'>{{ udIndicators }}</label>
+      </div>
+      <div class='typing-indicator-setting'>
+        <input type='checkbox' name='typing-indicator-setting' id='typing-indicator-setting'/>
+        <label for='typing-indicator-setting'>{{ typingIndicators }}</label>
+      </div>
+      <div class='link-preview-setting'>
+        <input type='checkbox' name='link-preview-setting' id='link-preview-setting'/>
+        <label for='link-preview-setting'>{{ linkPreviews }}</label>
+      </div>
+    </div>
     <div class='sync-setting'></div>
     <hr>
     <div class='clear-data-settings'>
