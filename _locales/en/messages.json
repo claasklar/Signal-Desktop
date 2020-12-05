@@ -1246,6 +1246,26 @@
     "message": "Spell check will be disabled the next time Signal starts.",
     "description": "Shown when the user disables spellcheck to indicate that they must restart Signal."
   },
+  "privacySettings": {
+    "message": "Privacy Settings",
+    "description": "Header for privacy options on the settings screen"
+  },
+  "sendReadReceipts": {
+    "message": "Send Read Receipts",
+    "description": "Label for setting to send read receipts"
+  },
+  "udIndicators": {
+    "message": "Send Unidentified Delivery Indicators",
+    "description": "Label for setting to send unidentified delivery indicators"
+  },
+  "typingIndicators": {
+    "message": "Typing Indicators",
+    "description": "Label for setting to send typing indicators"
+  },
+  "linkPreviews": {
+    "message": "Link Previews",
+    "description": "Label for setting to send link previews"
+  },
   "clearDataHeader": {
     "message": "Clear Data",
     "description": "Header in the settings dialog for the section dealing with data deletion"
