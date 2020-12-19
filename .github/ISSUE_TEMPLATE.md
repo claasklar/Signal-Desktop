@@ -58,10 +58,6 @@ Operating System:
 
 <!-- Instructions for finding your OS version are here: http://whatsmyos.com/ -->
 
-Linked Device Version:
-
-<!-- Android: Settings -> Advanced,  iOS: Settings -> General -> About -->
-
 ### Link to Debug Log
 
 <!--

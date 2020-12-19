@@ -1,22 +1,7 @@
-<!--
-Thanks for contributing to the project!
-Please help us keep this project in good shape by going through this checklist.
-Replace the empty checkboxes [ ] below with checked ones [X] as they are completed
-Remember, you can preview this before saving it.
--->
-
-<!-- You can remove this first section if you have contributed before -->
-
-### First time contributor checklist:
-
-- [ ] I have read the [README](https://github.com/signalapp/Signal-Desktop/blob/master/README.md) and [Contributor Guidelines](https://github.com/signalapp/Signal-Desktop/blob/master/CONTRIBUTING.md)
-- [ ] I have signed the [Contributor Licence Agreement](https://signal.org/cla/)
-
 ### Contributor checklist:
 
-- [ ] My contribution is **not** related to translations. _Please submit translation changes via our [Signal Desktop Transifex project](https://www.transifex.com/signalapp/signal-desktop/)._
 - [ ] My commits are in nice logical chunks with [good commit messages](http://chris.beams.io/posts/git-commit/)
-- [ ] My changes are [rebased](https://medium.freecodecamp.org/git-rebase-and-the-golden-rule-explained-70715eccc372) on the latest [`development`](https://github.com/signalapp/Signal-Desktop/tree/development) branch
+- [ ] My changes are [rebased](https://medium.freecodecamp.org/git-rebase-and-the-golden-rule-explained-70715eccc372) on the latest [`standalone`](https://github.com/claasklar/Signal-Desktop/tree/standalone) branch
 - [ ] A `yarn ready` run passes successfully ([more about tests here](https://github.com/signalapp/Signal-Desktop/blob/master/CONTRIBUTING.md#tests))
 - [ ] My changes are ready to be shipped to users
 
