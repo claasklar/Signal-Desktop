@@ -502,6 +502,7 @@ export declare class ContactDetailsClass {
     data: ArrayBuffer | ByteBufferClass,
     encoding?: string
   ) => ContactDetailsClass;
+  toArrayBuffer: () => ArrayBuffer;
 
   number?: string;
   uuid?: string;
@@ -739,6 +740,7 @@ export declare class GroupDetailsClass {
     data: ArrayBuffer | ByteBufferClass,
     encoding?: string
   ) => GroupDetailsClass;
+  toArrayBuffer: () => ArrayBuffer;
 
   id?: ProtoBinaryType;
   name?: string;

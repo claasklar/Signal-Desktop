@@ -34,6 +34,8 @@ import {
   StorageServiceCallOptionsType,
   StorageServiceCredentials,
   SyncMessageClass,
+  ContactDetailsClass,
+  GroupDetailsClass,
 } from '../textsecure.d';
 import { MessageError, SignedPreKeyRotationError } from './Errors';
 import { BodyRangesType } from '../types/Util';
@@ -675,6 +677,68 @@ export default class MessageSender {
     });
   }
 
+  async sendSyncMessageResponse(syncOptions: {
+    contactDetailsList?: Array<ContactDetailsClass>;
+    complete?: boolean;
+    groupDetailsList?: Array<GroupDetailsClass>;
+    configuration?: SyncMessageClass.Configuration;
+  }): Promise<CallbackResultType> {
+    const content = new window.textsecure.protobuf.Content();
+    const syncMessage = new window.textsecure.protobuf.SyncMessage();
+    content.syncMessage = syncMessage;
+    const timestamp = Date.now();
+
+    const detailsList =
+      syncOptions.contactDetailsList || syncOptions.groupDetailsList;
+    if (detailsList) {
+      const byteBuffer = new window.dcodeIO.ByteBuffer(detailsList.length * 50);
+      detailsList.forEach(
+        (details: ContactDetailsClass | GroupDetailsClass) => {
+          const detailsBytes = details.toArrayBuffer();
+          byteBuffer.writeVarint32(detailsBytes.byteLength);
+          byteBuffer.append(detailsBytes);
+        }
+      );
+      byteBuffer.limit = byteBuffer.offset;
+      byteBuffer.offset = 0;
+      const attachment = byteBuffer.toArrayBuffer();
+
+      const attachmentPointer = await this.makeAttachmentPointer({
+        data: attachment,
+        size: attachment.byteLength,
+        contentType: 'application/octet-stream',
+      } as AttachmentType);
+
+      if (syncOptions.contactDetailsList) {
+        syncMessage.contacts = new window.textsecure.protobuf.SyncMessage.Contacts();
+        syncMessage.contacts.blob = attachmentPointer;
+        syncMessage.contacts.complete = syncOptions.complete;
+      } else {
+        syncMessage.groups = new window.textsecure.protobuf.SyncMessage.Groups();
+        syncMessage.groups.blob = attachmentPointer;
+      }
+    } else if (syncOptions.configuration) {
+      syncMessage.configuration = syncOptions.configuration;
+    }
+
+    const ourNumber = window.textsecure.storage.user.getNumber();
+    const sendOptions = window.ConversationController.prepareForSend(
+      ourNumber,
+      {
+        syncMessage: true,
+      }
+    ).sendOptions as SendOptionsType;
+    sendOptions.online = false;
+
+    return this.sendIndividualProto(
+      ourNumber,
+      content,
+      timestamp,
+      true,
+      sendOptions
+    );
+  }
+
   createSyncMessage(): SyncMessageClass {
     const syncMessage = new window.textsecure.protobuf.SyncMessage();
 
@@ -700,7 +764,7 @@ export default class MessageSender {
     options?: SendOptionsType
   ): Promise<CallbackResultType | void> {
     const myNumber = window.textsecure.storage.user.getNumber();
-    const myUuid = window.textsecure.storage.user.getUuid();
+    // const myUuid = window.textsecure.storage.user.getUuid();
     const myDevice = window.textsecure.storage.user.getDeviceId();
 
     if (myDevice === 1 || myDevice === '1') {
@@ -760,7 +824,7 @@ export default class MessageSender {
 
     const silent = true;
     return this.sendIndividualProto(
-      myUuid || myNumber,
+      myNumber,
       contentMessage,
       timestamp,
       silent,
@@ -895,7 +959,6 @@ export default class MessageSender {
   ): Promise<CallbackResultType | void> {
     const myNumber = window.textsecure.storage.user.getNumber();
     const myUuid = window.textsecure.storage.user.getUuid();
-
     const myDevice = window.textsecure.storage.user.getDeviceId();
     if (myDevice !== 1 && myDevice !== '1') {
       const request = new window.textsecure.protobuf.SyncMessage.Request();
