@@ -1486,7 +1486,8 @@ export function initialize({
       return _ajax({
         call: 'keys',
         httpType: 'GET',
-        urlParameters: `/${identifier}/${deviceId || '*'}`,
+        urlParameters: `/${identifier}/${(deviceId === 1 ? '*' : deviceId) ||
+          '*'}`,
         responseType: 'json',
         validateResponse: { identityKey: 'string', devices: 'object' },
       }).then(handleKeys);
