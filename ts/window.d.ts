@@ -38,12 +38,13 @@ import { combineNames } from './util';
 import { BatcherType } from './util/batcher';
 import { ErrorModal } from './components/ErrorModal';
 import { ProgressModal } from './components/ProgressModal';
+import StringView from './textsecure/StringView';
 
 export { Long } from 'long';
 
 type TaskResultType = any;
 
-type WhatIsThis = any;
+export type WhatIsThis = any;
 
 declare global {
   interface Window {
@@ -502,6 +503,7 @@ export class ByteBufferClass {
   readLong: (offset: number) => Long;
   readShort: (offset: number) => number;
   readVarint32: () => number;
+  writeVarint32: (value: number) => ByteBufferClass;
   writeLong: (l: Long) => void;
   skip: (length: number) => void;
 }

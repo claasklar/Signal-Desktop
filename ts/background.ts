@@ -1901,6 +1901,12 @@ type WhatIsThis = typeof window.WhatIsThis;
     addQueuedEventListener('profileKeyUpdate', onProfileKeyUpdate);
     addQueuedEventListener('fetchLatest', onFetchLatestSync);
     addQueuedEventListener('keys', onKeysSync);
+    addQueuedEventListener('contactSyncRequest', onContactSyncRequest);
+    addQueuedEventListener('groupSyncRequest', onGroupSyncRequest);
+    addQueuedEventListener(
+      'configurationSyncRequest',
+      onConfigurationSyncRequest
+    );
 
     window.Signal.AttachmentDownloads.start({
       getMessageReceiver: () => messageReceiver,
@@ -3146,6 +3152,121 @@ type WhatIsThis = typeof window.WhatIsThis;
 
       await window.Signal.Services.runStorageServiceSyncJob();
     }
+  }
+
+  async function onContactSyncRequest() {
+    const allConversations = await window.Signal.Data.getAllConversations({
+      ConversationCollection: Whisper.ConversationCollection,
+    });
+    // eslint-disable-next-line more/no-then
+    return Promise.all(
+      allConversations
+        .map(conversation => conversation.attributes)
+        .filter(attributes => attributes.type === 'private')
+        .map(async attributes => [
+          attributes,
+          await window.Signal.Data.getIdentityKeyById(attributes.id),
+        ])
+        .map(async attributesKeyPairPromise => {
+          const [attributes, idKey] = await attributesKeyPairPromise;
+          const contactDetails = new window.textsecure.protobuf.ContactDetails();
+          contactDetails.uuid = attributes.uuid || null;
+          contactDetails.number = attributes.e164 || null;
+          contactDetails.name = attributes.name || null;
+          contactDetails.color = attributes.color || null;
+          contactDetails.verified = new window.textsecure.protobuf.Verified();
+          contactDetails.verified.state = attributes.verified || null;
+          contactDetails.verified.destination = attributes.e164 || null;
+          contactDetails.verified.destinationUuid = attributes.uuid || null;
+          contactDetails.verified.identityKey = idKey ? idKey.publicKey : null;
+          contactDetails.profileKey = attributes.profileKey
+            ? window.textsecure.StringView.base64ToBytes(attributes.profileKey)
+            : null;
+          contactDetails.blocked = attributes.blocked || null;
+          contactDetails.expireTimer =
+            attributes.expireTimer && attributes.expireTimer > 0
+              ? attributes.expireTimer
+              : null;
+          contactDetails.inboxPosition = attributes.inboxPosition || null;
+          return contactDetails;
+        })
+    ).then(contacts =>
+      window.textsecure.messaging
+        .sendSyncMessageResponse({
+          contactDetailsList: contacts,
+          complete: true,
+        })
+        .catch(err =>
+          window.log.error(
+            'Failed to send syncMessage.contacts: ',
+            Errors.toLogFormat(err)
+          )
+        )
+    );
+  }
+
+  async function onGroupSyncRequest() {
+    const allConversations = await window.Signal.Data.getAllConversations({
+      ConversationCollection: Whisper.ConversationCollection,
+    });
+
+    const groups = allConversations
+      .map(conversation => conversation.attributes)
+      .filter(conversation => conversation.type === 'group')
+      .map(attributes => {
+        const groupDetails = new window.textsecure.protobuf.GroupDetails();
+        groupDetails.id = attributes.id || null;
+        groupDetails.name = attributes.name || null;
+        groupDetails.members =
+          attributes.members.map((memberUuid: string) => {
+            const member = new window.textsecure.protobuf.GroupDetails.Member();
+            member.uuid = memberUuid;
+            return member;
+          }) || [];
+        groupDetails.expireTimer =
+          attributes.expireTimer && attributes.expireTimer > 0
+            ? attributes.expireTimer
+            : null;
+        groupDetails.color = attributes.color || null;
+        groupDetails.blocked = attributes.blocked;
+        groupDetails.avatar = attributes.avatar;
+        groupDetails.active = attributes.active;
+        return groupDetails;
+      });
+
+    return window.textsecure.messaging
+      .sendSyncMessageResponse({
+        groupDetailsList: groups,
+      })
+      .catch(err =>
+        window.log.error(
+          'Failed to send syncMessage.groups: ',
+          Errors.toLogFormat(err)
+        )
+      );
+  }
+
+  async function onConfigurationSyncRequest() {
+    const config = new window.textsecure.protobuf.SyncMessage.Configuration();
+
+    config.readReceipts = window.storage.get('read-receipt-setting', false);
+    config.unidentifiedDeliveryIndicators = window.storage.get(
+      'unidentifiedDeliveryIndicators',
+      false
+    );
+    config.typingIndicators = window.storage.get('typingIndicators', false);
+    config.linkPreviews = window.storage.get('linkPreviews', false);
+
+    return window.textsecure.messaging
+      .sendSyncMessageResponse({
+        configuration: config,
+      })
+      .catch(err =>
+        window.log.error(
+          'Failed to send syncMessage.configuration: ',
+          Errors.toLogFormat(err)
+        )
+      );
   }
 
   async function onMessageRequestResponse(ev: WhatIsThis) {

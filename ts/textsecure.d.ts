@@ -8,7 +8,7 @@ import Crypto from './textsecure/Crypto';
 import MessageReceiver from './textsecure/MessageReceiver';
 import MessageSender from './textsecure/SendMessage';
 import EventTarget from './textsecure/EventTarget';
-import { ByteBufferClass } from './window.d';
+import { ByteBufferClass, WhatIsThis } from './window.d';
 import SendMessage, { SendOptionsType } from './textsecure/SendMessage';
 import { WebAPIType } from './textsecure/WebAPI';
 import utils from './textsecure/Helpers';
@@ -82,12 +82,17 @@ export type TextSecureType = {
   messaging: SendMessage;
   protobuf: ProtobufCollectionType;
   utils: typeof utils;
+  StringView: StringViewType;
 
   EventTarget: typeof EventTarget;
   MessageReceiver: typeof MessageReceiver;
   AccountManager: WhatIsThis;
   MessageSender: WhatIsThis;
   SyncRequest: WhatIsThis;
+};
+
+type StringViewType = {
+  base64ToBytes: (sBase64: string, nBlocksSize?: number) => ArrayBuffer;
 };
 
 type StoredSignedPreKeyType = SignedPreKeyType & {
@@ -502,6 +507,7 @@ export declare class ContactDetailsClass {
     data: ArrayBuffer | ByteBufferClass,
     encoding?: string
   ) => ContactDetailsClass;
+  toArrayBuffer: () => ArrayBuffer;
 
   number?: string;
   uuid?: string;
@@ -739,6 +745,7 @@ export declare class GroupDetailsClass {
     data: ArrayBuffer | ByteBufferClass,
     encoding?: string
   ) => GroupDetailsClass;
+  toArrayBuffer: () => ArrayBuffer;
 
   id?: ProtoBinaryType;
   name?: string;

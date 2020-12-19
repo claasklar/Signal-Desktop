@@ -66,6 +66,7 @@ class ProvisioningCipherInner {
               provisioningCode: provisionMessage.provisioningCode,
               userAgent: provisionMessage.userAgent,
               readReceipts: provisionMessage.readReceipts,
+              uuid: provisionMessage.uuid,
             };
             if (provisionMessage.profileKey) {
               ret.profileKey = provisionMessage.profileKey.toArrayBuffer();

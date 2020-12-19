@@ -155,6 +155,7 @@ export default class AccountManager extends EventTarget {
         provisionMessage.number = window.textsecure.storage.user.getNumber();
         provisionMessage.provisioningCode = code;
         provisionMessage.profileKey = profileKey;
+        provisionMessage.uuid = window.textsecure.storage.user.getUuid();
 
         const provisioningCipher = new ProvisioningCipher();
         return provisioningCipher
@@ -188,6 +189,7 @@ export default class AccountManager extends EventTarget {
             verificationCode,
             identityKeyPair,
             profileKey,
+            null,
             null,
             null,
             null,
@@ -295,6 +297,7 @@ export default class AccountManager extends EventTarget {
                               provisionMessage.identityKeyPair,
                               provisionMessage.profileKey,
                               deviceName,
+                              provisionMessage.uuid || null,
                               provisionMessage.userAgent,
                               provisionMessage.readReceipts,
                               { uuid: provisionMessage.uuid }
@@ -515,6 +518,7 @@ export default class AccountManager extends EventTarget {
     identityKeyPair: KeyPairType,
     profileKey: ArrayBuffer | undefined,
     deviceName: string | null,
+    uuid: string | null,
     userAgent?: string | null,
     readReceipts?: boolean | null,
     options: { accessKey?: ArrayBuffer; uuid?: string } = {}
@@ -608,7 +612,7 @@ export default class AccountManager extends EventTarget {
       deviceName
     );
 
-    const setUuid = response.uuid;
+    const setUuid = response.uuid || uuid;
     if (setUuid) {
       await window.textsecure.storage.user.setUuidAndDeviceId(
         setUuid,
@@ -619,7 +623,7 @@ export default class AccountManager extends EventTarget {
     // update our own identity key, which may have changed
     // if we're relinking after a reinstall on the master device
     await window.textsecure.storage.protocol.saveIdentityWithAttributes(
-      number,
+      setUuid,
       {
         publicKey: identityKeyPair.pubKey,
         firstUse: true,
