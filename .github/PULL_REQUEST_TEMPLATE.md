@@ -1,17 +1,3 @@
-<!--
-Thanks for contributing to the project!
-Please help us keep this project in good shape by going through this checklist.
-Replace the empty checkboxes [ ] below with checked ones [X] as they are completed
-Remember, you can preview this before saving it.
--->
-
-<!-- You can remove this first section if you have contributed before -->
-
-### First time contributor checklist:
-
-- [ ] I have read the [README](https://github.com/signalapp/Signal-Desktop/blob/master/README.md) and [Contributor Guidelines](https://github.com/signalapp/Signal-Desktop/blob/master/CONTRIBUTING.md)
-- [ ] I have signed the [Contributor Licence Agreement](https://signal.org/cla/)
-
 ### Contributor checklist:
 
 - [ ] My contribution is **not** related to translations. _Please submit translation changes via our [Signal Desktop Transifex project](https://www.transifex.com/signalapp/signal-desktop/)._
