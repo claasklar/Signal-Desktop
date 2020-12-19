@@ -1,9 +1,26 @@
 # Signal Desktop
 
+**REGISTERING A NEW DEVICE WILL DELETE THE OLD ACCOUNT ASSOCIATED WITH THE NUMBER**
 
+This Signal Desktop fork can be used without a smartphone.
 
+---
 
+This is a hobby project and I am no frontend developer nor a security expert in any way. Nevertheless I am using this fork myself and am trying to keep it up to date with the upstream master branch. This project can not be considered finished, but a minimal usage is covered. Here is a brief overview about what is currently possible:
 
+### Features
+
+- Register Signal-Desktop as a standalone device.
+  - This option is part of the official Signal-Desktop (only in development mode) and can therefore be considered rather stable
+- Changing a contact's name
+- Linking a secondary Signal-Desktop instance to the primary one
+- One-Way Synchronization accross multiple devices. This is similar to the synchronization mechanism between Signal-Android/iOS and Signal-Desktop.
+  - Any changes made in the secondary devices will be overwritten upon next synchronization
+- Changing privacy settings
+  - Read Receipts
+  - Unidentified Delivery Indicators
+  - Typing Indicators
+  - Link Previews
 
 ## Got a question?
 
