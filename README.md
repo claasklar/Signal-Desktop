@@ -12,14 +12,12 @@ The [community forum](https://community.signalusers.org/) is another good place 
 
 ## Found a Bug? Have a feature request?
 
-Please search for any [existing issues](https://github.com/signalapp/Signal-Desktop/issues) that describe your bug in order to avoid duplicate submissions.
-
+Please search for any [existing issues](https://github.com/claasklar/Signal-Desktop/issues) that describe your bug in order to avoid duplicate submissions.
 
 ## Contributing Code
 
-Please see [CONTRIBUTING.md](https://github.com/signalapp/Signal-Desktop/blob/master/CONTRIBUTING.md)
-for setup instructions and guidelines for new contributors. Don't forget to sign the [CLA](https://signal.org/cla/).
-
+Please see [CONTRIBUTING.md](https://github.com/claasklar/Signal-Desktop/blob/standalone/CONTRIBUTING.md)
+for setup instructions and guidelines for new contributors.
 
 ## Cryptography Notice
 
