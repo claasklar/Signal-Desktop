@@ -1,18 +1,9 @@
 # Signal Desktop
 
-Signal Desktop is an Electron application that links with Signal
-on [Android](https://github.com/signalapp/Signal-Android)
-or [iOS](https://github.com/signalapp/Signal-iOS).
 
-## Install the production version: https://signal.org/download/
 
-## Install the beta
 
-You can install the beta version of Signal Desktop alongside the production version. The beta uses different data and install locations.
 
-- _Windows:_ First, download [this file](https://updates.signal.org/desktop/beta.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<installer location>`. Then run the installer.
-- _macOS:_ First, download [this file](https://updates.signal.org/desktop/beta-mac.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<package location>`. Then unzip that package and copy the `.app` file into the `/Applications` folder using Finder.
-- _Linux:_ Follow the production instructions to set up the APT repository and run `apt install signal-desktop-beta`.
 
 ## Got a question?
 
@@ -23,20 +14,12 @@ The [community forum](https://community.signalusers.org/) is another good place 
 
 Please search for any [existing issues](https://github.com/signalapp/Signal-Desktop/issues) that describe your bug in order to avoid duplicate submissions.
 
-## Contributing Translations
-
-Interested in helping to translate Signal? Contribute here:
-
-https://www.transifex.com/projects/p/signal-desktop
 
 ## Contributing Code
 
 Please see [CONTRIBUTING.md](https://github.com/signalapp/Signal-Desktop/blob/master/CONTRIBUTING.md)
 for setup instructions and guidelines for new contributors. Don't forget to sign the [CLA](https://signal.org/cla/).
 
-## Contributing Funds
-
-You can donate to Signal development through the [Signal Technology Foundation](https://signal.org/donate), an independent 501c3 nonprofit.
 
 ## Cryptography Notice
 
