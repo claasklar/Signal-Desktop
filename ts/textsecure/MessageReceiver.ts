@@ -1543,8 +1543,7 @@ class MessageReceiverInner extends EventTarget {
     }
     if (syncMessage.request) {
       window.log.info('Got SyncMessage Request');
-      this.removeFromCache(envelope);
-      return undefined;
+      return this.handleSyncRequest(envelope, syncMessage.request);
     }
     if (syncMessage.read && syncMessage.read.length) {
       window.log.info('read messages from', this.getEnvelopeId(envelope));
@@ -1583,6 +1582,34 @@ class MessageReceiverInner extends EventTarget {
 
     this.removeFromCache(envelope);
     throw new Error('Got empty SyncMessage');
+  }
+
+  async handleSyncRequest(
+    envelope: EnvelopeClass,
+    request: SyncMessageClass.Request
+  ) {
+    let ev = null;
+
+    switch (request.type) {
+      case 1:
+        window.log.info('got contact sync request');
+        ev = new Event('contactSyncRequest');
+        break;
+      case 2:
+        window.log.info('got group sync request');
+        ev = new Event('groupSyncRequest');
+        break;
+      case 4:
+        window.log.info('got configuration sync request');
+        ev = new Event('configurationSyncRequest');
+        break;
+      default:
+        throw new Error(`${request.type} is a unknown sync request type.`);
+    }
+
+    this.removeFromCache(envelope);
+
+    return this.dispatchAndWait(ev);
   }
 
   async handleConfiguration(
