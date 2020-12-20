@@ -1,18 +1,26 @@
 # Signal Desktop
 
-Signal Desktop is an Electron application that links with Signal
-on [Android](https://github.com/signalapp/Signal-Android)
-or [iOS](https://github.com/signalapp/Signal-iOS).
+**REGISTERING A NEW DEVICE WILL DELETE THE OLD ACCOUNT ASSOCIATED WITH THE NUMBER**
 
-## Install the production version: https://signal.org/download/
+This Signal Desktop fork can be used without a smartphone.
 
-## Install the beta
+---
 
-You can install the beta version of Signal Desktop alongside the production version. The beta uses different data and install locations.
+This is a hobby project and I am no frontend developer nor a security expert in any way. Nevertheless I am using this fork myself and am trying to keep it up to date with the upstream master branch. This project can not be considered finished, but a minimal usage is covered. Here is a brief overview about what is currently possible:
 
-- _Windows:_ First, download [this file](https://updates.signal.org/desktop/beta.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<installer location>`. Then run the installer.
-- _macOS:_ First, download [this file](https://updates.signal.org/desktop/beta-mac.yml) and look for the `url` property that specifies the location for the latest beta installer. Download the installer by constructing a final URL that looks like this: `https://updates.signal.org/desktop/<package location>`. Then unzip that package and copy the `.app` file into the `/Applications` folder using Finder.
-- _Linux:_ Follow the production instructions to set up the APT repository and run `apt install signal-desktop-beta`.
+### Features
+
+- Register Signal-Desktop as a standalone device.
+  - This option is part of the official Signal-Desktop (only in development mode) and can therefore be considered rather stable
+- Changing a contact's name
+- Linking a secondary Signal-Desktop instance to the primary one
+- One-Way Synchronization accross multiple devices. This is similar to the synchronization mechanism between Signal-Android/iOS and Signal-Desktop.
+  - Any changes made in the secondary devices will be overwritten upon next synchronization
+- Changing privacy settings
+  - Read Receipts
+  - Unidentified Delivery Indicators
+  - Typing Indicators
+  - Link Previews
 
 ## Got a question?
 
@@ -21,22 +29,12 @@ The [community forum](https://community.signalusers.org/) is another good place 
 
 ## Found a Bug? Have a feature request?
 
-Please search for any [existing issues](https://github.com/signalapp/Signal-Desktop/issues) that describe your bug in order to avoid duplicate submissions.
-
-## Contributing Translations
-
-Interested in helping to translate Signal? Contribute here:
-
-https://www.transifex.com/projects/p/signal-desktop
+Please search for any [existing issues](https://github.com/claasklar/Signal-Desktop/issues) that describe your bug in order to avoid duplicate submissions.
 
 ## Contributing Code
 
-Please see [CONTRIBUTING.md](https://github.com/signalapp/Signal-Desktop/blob/master/CONTRIBUTING.md)
-for setup instructions and guidelines for new contributors. Don't forget to sign the [CLA](https://signal.org/cla/).
-
-## Contributing Funds
-
-You can donate to Signal development through the [Signal Technology Foundation](https://signal.org/donate), an independent 501c3 nonprofit.
+Please see [CONTRIBUTING.md](https://github.com/claasklar/Signal-Desktop/blob/standalone/CONTRIBUTING.md)
+for setup instructions and guidelines for new contributors.
 
 ## Cryptography Notice
 
