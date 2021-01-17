@@ -1,3 +1,6 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Signal:false */
 /* global Backbone: false */
 
@@ -8,7 +11,7 @@
 /* global _: false */
 
 // eslint-disable-next-line func-names
-(function() {
+(function () {
   window.Whisper = window.Whisper || {};
 
   // The keys and values don't match here. This is because the values correspond to old

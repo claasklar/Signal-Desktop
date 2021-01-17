@@ -1,7 +1,7 @@
 /* global Whisper, i18n */
 
 // eslint-disable-next-line func-names
-(function() {
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.DeviceListRowView = Whisper.View.extend({

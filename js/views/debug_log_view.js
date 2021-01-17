@@ -1,8 +1,11 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global i18n: false */
 /* global Whisper: false */
 
 // eslint-disable-next-line func-names
-(function() {
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.LinkedCopiedToast = Whisper.ToastView.extend({
@@ -77,9 +80,7 @@
         });
         this.$('.loading').removeClass('loading');
         view.render();
-        this.$('.link')
-          .focus()
-          .select();
+        this.$('.link').focus().select();
       } catch (error) {
         window.log.error(
           'DebugLogView error:',

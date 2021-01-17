@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import React from 'react';
 import ReactDOM, { createPortal } from 'react-dom';
 import classNames from 'classnames';
@@ -99,6 +102,7 @@ export type PropsData = {
   timestamp: number;
   status?: MessageStatusType;
   contact?: ContactType;
+  authorId: string;
   authorTitle: string;
   authorName?: string;
   authorProfileName?: string;
@@ -167,6 +171,7 @@ export type PropsActions = {
     contact: ContactType;
     signalAccount?: string;
   }) => void;
+  showContactModal: (contactId: string) => void;
 
   showVisualAttachment: (options: {
     attachment: AttachmentType;
@@ -180,7 +185,10 @@ export type PropsActions = {
   displayTapToViewMessage: (messageId: string) => unknown;
 
   openLink: (url: string) => void;
-  scrollToQuotedMessage: (options: { author: string; sentAt: number }) => void;
+  scrollToQuotedMessage: (options: {
+    authorId: string;
+    sentAt: number;
+  }) => void;
   selectMessage?: (messageId: string, conversationId: string) => unknown;
 
   showExpiredIncomingTapToViewToast: () => unknown;
@@ -362,7 +370,7 @@ export class Message extends React.PureComponent<Props, State> {
 
   public componentWillUnmount(): void {
     if (this.selectedTimeout) {
-      clearInterval(this.selectedTimeout);
+      clearTimeout(this.selectedTimeout);
     }
     if (this.expirationCheckInterval) {
       clearInterval(this.expirationCheckInterval);
@@ -966,7 +974,7 @@ export class Message extends React.PureComponent<Props, State> {
       ? undefined
       : () => {
           scrollToQuotedMessage({
-            author: quote.authorId,
+            authorId: quote.authorId,
             sentAt: quote.sentAt,
           });
         };
@@ -1052,6 +1060,7 @@ export class Message extends React.PureComponent<Props, State> {
   public renderAvatar(): JSX.Element | undefined {
     const {
       authorAvatarPath,
+      authorId,
       authorName,
       authorPhoneNumber,
       authorProfileName,
@@ -1061,6 +1070,7 @@ export class Message extends React.PureComponent<Props, State> {
       conversationType,
       direction,
       i18n,
+      showContactModal,
     } = this.props;
 
     if (
@@ -1068,12 +1078,16 @@ export class Message extends React.PureComponent<Props, State> {
       conversationType !== 'group' ||
       direction === 'outgoing'
     ) {
-      return;
+      return undefined;
     }
 
-    // eslint-disable-next-line consistent-return
     return (
-      <div className="module-message__author-avatar">
+      <button
+        type="button"
+        className="module-message__author-avatar"
+        onClick={() => showContactModal(authorId)}
+        tabIndex={0}
+      >
         <Avatar
           avatarPath={authorAvatarPath}
           color={authorColor}
@@ -1085,7 +1099,7 @@ export class Message extends React.PureComponent<Props, State> {
           title={authorTitle}
           size={28}
         />
-      </div>
+      </button>
     );
   }
 
@@ -1347,7 +1361,9 @@ export class Message extends React.PureComponent<Props, State> {
 
     const { canDeleteForEveryone } = this.state;
 
-    const showRetry = status === 'error' && direction === 'outgoing';
+    const showRetry =
+      (status === 'error' || status === 'partial-sent') &&
+      direction === 'outgoing';
     const multipleAttachments = attachments && attachments.length > 1;
 
     const menu = (
@@ -1360,7 +1376,8 @@ export class Message extends React.PureComponent<Props, State> {
         attachments[0] ? (
           <MenuItem
             attributes={{
-              className: 'module-message__context__download',
+              className:
+                'module-message__context--icon module-message__context__download',
             }}
             onClick={this.openGenericAttachment}
           >
@@ -1371,20 +1388,8 @@ export class Message extends React.PureComponent<Props, State> {
           <>
             <MenuItem
               attributes={{
-                className: 'module-message__context__react',
-              }}
-              onClick={(event: React.MouseEvent) => {
-                event.stopPropagation();
-                event.preventDefault();
-
-                this.toggleReactionPicker();
-              }}
-            >
-              {i18n('reactToMessage')}
-            </MenuItem>
-            <MenuItem
-              attributes={{
-                className: 'module-message__context__reply',
+                className:
+                  'module-message__context--icon module-message__context__reply',
               }}
               onClick={(event: React.MouseEvent) => {
                 event.stopPropagation();
@@ -1395,11 +1400,26 @@ export class Message extends React.PureComponent<Props, State> {
             >
               {i18n('replyToMessage')}
             </MenuItem>
+            <MenuItem
+              attributes={{
+                className:
+                  'module-message__context--icon module-message__context__react',
+              }}
+              onClick={(event: React.MouseEvent) => {
+                event.stopPropagation();
+                event.preventDefault();
+
+                this.toggleReactionPicker();
+              }}
+            >
+              {i18n('reactToMessage')}
+            </MenuItem>
           </>
         ) : null}
         <MenuItem
           attributes={{
-            className: 'module-message__context__more-info',
+            className:
+              'module-message__context--icon module-message__context__more-info',
           }}
           onClick={(event: React.MouseEvent) => {
             event.stopPropagation();
@@ -1413,7 +1433,8 @@ export class Message extends React.PureComponent<Props, State> {
         {showRetry ? (
           <MenuItem
             attributes={{
-              className: 'module-message__context__retry-send',
+              className:
+                'module-message__context--icon module-message__context__retry-send',
             }}
             onClick={(event: React.MouseEvent) => {
               event.stopPropagation();
@@ -1427,7 +1448,8 @@ export class Message extends React.PureComponent<Props, State> {
         ) : null}
         <MenuItem
           attributes={{
-            className: 'module-message__context__delete-message',
+            className:
+              'module-message__context--icon module-message__context__delete-message',
           }}
           onClick={(event: React.MouseEvent) => {
             event.stopPropagation();
@@ -1441,7 +1463,8 @@ export class Message extends React.PureComponent<Props, State> {
         {canDeleteForEveryone ? (
           <MenuItem
             attributes={{
-              className: 'module-message__context__delete-message-for-everyone',
+              className:
+                'module-message__context--icon module-message__context__delete-message-for-everyone',
             }}
             onClick={(event: React.MouseEvent) => {
               event.stopPropagation();

@@ -1,3 +1,6 @@
+// Copyright 2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
 import { ActionCreatorsMapObject, bindActionCreators } from 'redux';
 import { useDispatch } from 'react-redux';
@@ -40,4 +43,26 @@ export const useBoundActions = <T extends ActionCreatorsMapObject>(
   return React.useMemo(() => {
     return bindActionCreators(actions, dispatch);
   }, [actions, dispatch]);
+};
+
+export const usePageVisibility = (): boolean => {
+  const [result, setResult] = React.useState(!document.hidden);
+
+  React.useEffect(() => {
+    const onVisibilityChange = () => {
+      setResult(!document.hidden);
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange, false);
+
+    return () => {
+      document.removeEventListener(
+        'visibilitychange',
+        onVisibilityChange,
+        false
+      );
+    };
+  }, []);
+
+  return result;
 };

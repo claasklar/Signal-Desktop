@@ -1,3 +1,6 @@
+// Copyright 2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable no-nested-ternary */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable more/no-then */
@@ -31,6 +34,7 @@ import {
   DataMessageClass,
   GroupChangeClass,
   GroupClass,
+  GroupExternalCredentialClass,
   StorageServiceCallOptionsType,
   StorageServiceCredentials,
   SyncMessageClass,
@@ -103,6 +107,10 @@ type GroupV1InfoType = {
   members: Array<string>;
 };
 
+interface GroupCallUpdateType {
+  eraId: string;
+}
+
 type MessageOptionsType = {
   attachments?: Array<AttachmentType> | null;
   body?: string;
@@ -122,6 +130,8 @@ type MessageOptionsType = {
   reaction?: any;
   deletedForEveryoneTimestamp?: number;
   timestamp: number;
+  mentions?: BodyRangesType;
+  groupCallUpdate?: GroupCallUpdateType;
 };
 
 class Message {
@@ -146,13 +156,26 @@ class Message {
 
   profileKey?: ArrayBuffer;
 
-  quote?: any;
+  quote?: {
+    id?: number;
+    author?: string;
+    authorUuid?: string;
+    text?: string;
+    attachments?: Array<AttachmentType>;
+    bodyRanges?: BodyRangesType;
+  };
 
   recipients: Array<string>;
 
   sticker?: any;
 
-  reaction?: any;
+  reaction?: {
+    emoji?: string;
+    remove?: boolean;
+    targetAuthorE164?: string;
+    targetAuthorUuid?: string;
+    targetTimestamp?: number;
+  };
 
   timestamp: number;
 
@@ -161,6 +184,10 @@ class Message {
   attachmentPointers?: Array<any>;
 
   deletedForEveryoneTimestamp?: number;
+
+  mentions?: BodyRangesType;
+
+  groupCallUpdate?: GroupCallUpdateType;
 
   constructor(options: MessageOptionsType) {
     this.attachments = options.attachments || [];
@@ -178,6 +205,8 @@ class Message {
     this.reaction = options.reaction;
     this.timestamp = options.timestamp;
     this.deletedForEveryoneTimestamp = options.deletedForEveryoneTimestamp;
+    this.mentions = options.mentions;
+    this.groupCallUpdate = options.groupCallUpdate;
 
     if (!(this.recipients instanceof Array)) {
       throw new Error('Invalid recipient list');
@@ -251,6 +280,13 @@ class Message {
 
     if (this.body) {
       proto.body = this.body;
+
+      const mentionCount = this.mentions ? this.mentions.length : 0;
+      const placeholders = this.body.match(/\uFFFC/g);
+      const placeholderCount = placeholders ? placeholders.length : 0;
+      window.log.info(
+        `Sending a message with ${mentionCount} mentions and ${placeholderCount} placeholders`
+      );
     }
     if (this.flags) {
       proto.flags = this.flags;
@@ -276,8 +312,14 @@ class Message {
       }
     }
     if (this.reaction) {
-      proto.reaction = this.reaction;
+      proto.reaction = new window.textsecure.protobuf.DataMessage.Reaction();
+      proto.reaction.emoji = this.reaction.emoji || null;
+      proto.reaction.remove = this.reaction.remove || false;
+      proto.reaction.targetAuthorE164 = this.reaction.targetAuthorE164 || null;
+      proto.reaction.targetAuthorUuid = this.reaction.targetAuthorUuid || null;
+      proto.reaction.targetTimestamp = this.reaction.targetTimestamp || null;
     }
+
     if (Array.isArray(this.preview)) {
       proto.preview = this.preview.map(preview => {
         const item = new window.textsecure.protobuf.DataMessage.Preview();
@@ -296,9 +338,10 @@ class Message {
       proto.quote = new Quote();
       const { quote } = proto;
 
-      quote.id = this.quote.id;
-      quote.author = this.quote.author;
-      quote.text = this.quote.text;
+      quote.id = this.quote.id || null;
+      quote.author = this.quote.author || null;
+      quote.authorUuid = this.quote.authorUuid || null;
+      quote.text = this.quote.text || null;
       quote.attachments = (this.quote.attachments || []).map(
         (attachment: AttachmentType) => {
           const quotedAttachment = new QuotedAttachment();
@@ -340,6 +383,26 @@ class Message {
       proto.delete = {
         targetSentTimestamp: this.deletedForEveryoneTimestamp,
       };
+    }
+    if (this.mentions) {
+      proto.requiredProtocolVersion =
+        window.textsecure.protobuf.DataMessage.ProtocolVersion.MENTIONS;
+      proto.bodyRanges = this.mentions.map(
+        ({ start, length, mentionUuid }) => ({
+          start,
+          length,
+          mentionUuid,
+        })
+      );
+    }
+
+    if (this.groupCallUpdate) {
+      const { GroupCallUpdate } = window.textsecure.protobuf.DataMessage;
+
+      const groupCallUpdate = new GroupCallUpdate();
+      groupCallUpdate.eraId = this.groupCallUpdate.eraId;
+
+      proto.groupCallUpdate = groupCallUpdate;
     }
 
     this.dataMessage = proto;
@@ -1143,6 +1206,24 @@ export default class MessageSender {
     );
   }
 
+  sendGroupCallUpdate(
+    {
+      groupV2,
+      eraId,
+      timestamp,
+    }: { groupV2: GroupV2InfoType; eraId: string; timestamp: number },
+    options?: SendOptionsType
+  ): Promise<CallbackResultType> {
+    return this.sendMessageToGroup(
+      {
+        groupV2,
+        groupCallUpdate: { eraId },
+        timestamp,
+      },
+      options
+    );
+  }
+
   async sendDeliveryReceipt(
     recipientE164: string,
     recipientUuid: string,
@@ -1479,7 +1560,8 @@ export default class MessageSender {
     timestamp: number,
     expireTimer: number | undefined,
     profileKey?: ArrayBuffer,
-    flags?: number
+    flags?: number,
+    mentions?: BodyRangesType
   ): Promise<ArrayBuffer> {
     const attributes = {
       recipients: [destination],
@@ -1495,6 +1577,7 @@ export default class MessageSender {
       expireTimer,
       profileKey,
       flags,
+      mentions,
     };
 
     return this.getMessageProtoObj(attributes);
@@ -1554,7 +1637,7 @@ export default class MessageSender {
   ): Promise<
     CallbackResultType | void | Array<CallbackResultType | void | Array<void>>
   > {
-    window.log.info('resetting secure session');
+    window.log.info('resetSession: start');
     const silent = false;
     const proto = new window.textsecure.protobuf.DataMessage();
     proto.body = 'TERMINATE';
@@ -1567,7 +1650,7 @@ export default class MessageSender {
       window.log.error(prefix, error && error.stack ? error.stack : error);
       throw error;
     };
-    const deleteAllSessions = async (targetIdentifier: string) =>
+    const closeAllSessions = async (targetIdentifier: string) =>
       window.textsecure.storage.protocol
         .getDeviceIds(targetIdentifier)
         .then(async deviceIds =>
@@ -1577,21 +1660,24 @@ export default class MessageSender {
                 targetIdentifier,
                 deviceId
               );
-              window.log.info('deleting sessions for', address.toString());
+              window.log.info(
+                'resetSession: closing sessions for',
+                address.toString()
+              );
               const sessionCipher = new window.libsignal.SessionCipher(
                 window.textsecure.storage.protocol,
                 address
               );
-              return sessionCipher.deleteAllSessionsForDevice();
+              return sessionCipher.closeOpenSessionForDevice();
             })
           )
         );
 
-    const sendToContactPromise = deleteAllSessions(identifier)
-      .catch(logError('resetSession/deleteAllSessions1 error:'))
+    const sendToContactPromise = closeAllSessions(identifier)
+      .catch(logError('resetSession/closeAllSessions1 error:'))
       .then(async () => {
         window.log.info(
-          'finished closing local sessions, now sending to contact'
+          'resetSession: finished closing local sessions, now sending to contact'
         );
         return this.sendIndividualProto(
           identifier,
@@ -1602,8 +1688,8 @@ export default class MessageSender {
         ).catch(logError('resetSession/sendToContact error:'));
       })
       .then(async () =>
-        deleteAllSessions(identifier).catch(
-          logError('resetSession/deleteAllSessions2 error:')
+        closeAllSessions(identifier).catch(
+          logError('resetSession/closeAllSessions2 error:')
         )
       );
 
@@ -1644,6 +1730,8 @@ export default class MessageSender {
       sticker,
       deletedForEveryoneTimestamp,
       timestamp,
+      mentions,
+      groupCallUpdate,
     }: {
       attachments?: Array<AttachmentType>;
       expireTimer?: number;
@@ -1657,6 +1745,8 @@ export default class MessageSender {
       sticker?: any;
       deletedForEveryoneTimestamp?: number;
       timestamp: number;
+      mentions?: BodyRangesType;
+      groupCallUpdate?: GroupCallUpdateType;
     },
     options?: SendOptionsType
   ): Promise<CallbackResultType> {
@@ -1668,12 +1758,8 @@ export default class MessageSender {
 
     const myE164 = window.textsecure.storage.user.getNumber();
     const myUuid = window.textsecure.storage.user.getUuid();
-    // prettier-ignore
-    const recipients = groupV2
-      ? groupV2.members
-      : groupV1
-        ? groupV1.members
-        : [];
+
+    const groupMembers = groupV2?.members || groupV1?.members || [];
 
     // We should always have a UUID but have this check just in case we don't.
     let isNotMe: (recipient: string) => boolean;
@@ -1683,8 +1769,17 @@ export default class MessageSender {
       isNotMe = r => r !== myE164;
     }
 
+    const blockedIdentifiers = new Set([
+      ...window.storage.getBlockedUuids(),
+      ...window.storage.getBlockedNumbers(),
+    ]);
+
+    const recipients = groupMembers.filter(
+      recipient => isNotMe(recipient) && !blockedIdentifiers.has(recipient)
+    );
+
     const attrs = {
-      recipients: recipients.filter(isNotMe),
+      recipients,
       body: messageText,
       timestamp,
       attachments,
@@ -1702,6 +1797,8 @@ export default class MessageSender {
             type: window.textsecure.protobuf.GroupContext.Type.DELIVER,
           }
         : undefined,
+      mentions,
+      groupCallUpdate,
     };
 
     if (recipients.length === 0) {
@@ -1715,6 +1812,20 @@ export default class MessageSender {
     }
 
     return this.sendMessage(attrs, options);
+  }
+
+  async createGroup(
+    group: GroupClass,
+    options: GroupCredentialsType
+  ): Promise<void> {
+    return this.server.createGroup(group, options);
+  }
+
+  async uploadGroupAvatar(
+    avatar: ArrayBuffer,
+    options: GroupCredentialsType
+  ): Promise<string> {
+    return this.server.uploadGroupAvatar(avatar, options);
   }
 
   async getGroup(options: GroupCredentialsType): Promise<GroupClass> {
@@ -1853,5 +1964,11 @@ export default class MessageSender {
     options: StorageServiceCallOptionsType
   ): Promise<ArrayBuffer> {
     return this.server.modifyStorageRecords(data, options);
+  }
+
+  async getGroupMembershipToken(
+    options: GroupCredentialsType
+  ): Promise<GroupExternalCredentialClass> {
+    return this.server.getGroupExternalCredential(options);
   }
 }

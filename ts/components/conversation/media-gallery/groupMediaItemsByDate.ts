@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import moment from 'moment';
 import { compact, groupBy, sortBy } from 'lodash';
 
@@ -112,9 +115,7 @@ const withSection = (referenceDateTime: moment.Moment) => (
   mediaItem: MediaItemType
 ): MediaItemWithSection => {
   const today = moment(referenceDateTime).startOf('day');
-  const yesterday = moment(referenceDateTime)
-    .subtract(1, 'day')
-    .startOf('day');
+  const yesterday = moment(referenceDateTime).subtract(1, 'day').startOf('day');
   const thisWeek = moment(referenceDateTime).startOf('isoWeek');
   const thisMonth = moment(referenceDateTime).startOf('month');
 

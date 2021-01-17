@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // The idea with this file is to make it webpackable for the style guide
 
 const { bindActionCreators } = require('redux');
@@ -34,8 +37,8 @@ const {
 } = require('../../ts/components/conversation/ContactDetail');
 const { ContactListItem } = require('../../ts/components/ContactListItem');
 const {
-  ConversationHeader,
-} = require('../../ts/components/conversation/ConversationHeader');
+  ContactModal,
+} = require('../../ts/components/conversation/ContactModal');
 const { Emojify } = require('../../ts/components/conversation/Emojify');
 const { ErrorModal } = require('../../ts/components/ErrorModal');
 const { Lightbox } = require('../../ts/components/Lightbox');
@@ -54,16 +57,22 @@ const {
 const {
   StagedLinkPreview,
 } = require('../../ts/components/conversation/StagedLinkPreview');
-const {
-  getCallingNotificationText,
-} = require('../../ts/components/conversation/CallingNotification');
 
 // State
 const { createTimeline } = require('../../ts/state/roots/createTimeline');
 const {
   createCompositionArea,
 } = require('../../ts/state/roots/createCompositionArea');
+const {
+  createContactModal,
+} = require('../../ts/state/roots/createContactModal');
+const {
+  createConversationHeader,
+} = require('../../ts/state/roots/createConversationHeader');
 const { createCallManager } = require('../../ts/state/roots/createCallManager');
+const {
+  createGroupV1MigrationModal,
+} = require('../../ts/state/roots/createGroupV1MigrationModal');
 const { createLeftPane } = require('../../ts/state/roots/createLeftPane');
 const {
   createSafetyNumberViewer,
@@ -295,10 +304,9 @@ exports.setup = (options = {}) => {
     ConfirmationModal,
     ContactDetail,
     ContactListItem,
-    ConversationHeader,
+    ContactModal,
     Emojify,
     ErrorModal,
-    getCallingNotificationText,
     Lightbox,
     LightboxGallery,
     MediaGallery,
@@ -315,6 +323,9 @@ exports.setup = (options = {}) => {
   const Roots = {
     createCallManager,
     createCompositionArea,
+    createContactModal,
+    createConversationHeader,
+    createGroupV1MigrationModal,
     createLeftPane,
     createSafetyNumberViewer,
     createShortcutGuideModal,

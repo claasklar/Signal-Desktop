@@ -1,3 +1,6 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // For reference: https://github.com/airbnb/javascript
 
 const rules = {
@@ -11,6 +14,12 @@ const rules = {
       functions: 'never',
     },
   ],
+
+  // Overrides recommended by typescript-eslint
+  //   https://github.com/typescript-eslint/typescript-eslint/releases/tag/v4.0.0
+  '@typescript-eslint/no-redeclare': 'error',
+  '@typescript-eslint/no-shadow': 'error',
+  'no-shadow': 'off',
 
   // prevents us from accidentally checking in exclusive tests (`.only`):
   'mocha/no-exclusive-tests': 'error',
@@ -42,6 +51,8 @@ const rules = {
     'single',
     { avoidEscape: true, allowTemplateLiterals: false },
   ],
+
+  'no-continue': 'off',
 
   // Prettier overrides:
   'arrow-parens': 'off',
@@ -139,7 +150,7 @@ module.exports = {
       rules,
     },
     {
-      files: ['**/*.stories.tsx', 'ts/build/**', 'ts/test/**'],
+      files: ['**/*.stories.tsx', 'ts/build/**', 'ts/test-*/**'],
       rules: {
         ...rules,
         'import/no-extraneous-dependencies': 'off',

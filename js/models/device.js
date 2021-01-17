@@ -1,7 +1,7 @@
 /* global Backbone, Whisper */
 
 // eslint-disable-next-line func-names
-(function() {
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.Device = Backbone.Model.extend({

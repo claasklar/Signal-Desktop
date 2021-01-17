@@ -1,9 +1,21 @@
+// Copyright 2018-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
 import classNames from 'classnames';
 
 import { getInitials } from '../util/getInitials';
 import { LocalizerType } from '../types/Util';
 import { ColorType } from '../types/Colors';
+
+export enum AvatarSize {
+  TWENTY_EIGHT = 28,
+  THIRTY_TWO = 32,
+  FIFTY_TWO = 52,
+  EIGHTY = 80,
+  NINETY_SIX = 96,
+  ONE_HUNDRED_TWELVE = 112,
+}
 
 export type Props = {
   avatarPath?: string;
@@ -15,7 +27,7 @@ export type Props = {
   name?: string;
   phoneNumber?: string;
   profileName?: string;
-  size: 28 | 32 | 52 | 80 | 112;
+  size: AvatarSize;
 
   onClick?: () => unknown;
 
@@ -83,15 +95,9 @@ export class Avatar extends React.Component<Props, State> {
   }
 
   public renderNoImage(): JSX.Element {
-    const {
-      conversationType,
-      name,
-      noteToSelf,
-      profileName,
-      size,
-    } = this.props;
+    const { conversationType, noteToSelf, size, title } = this.props;
 
-    const initials = getInitials(name || profileName);
+    const initials = getInitials(title);
     const isGroup = conversationType === 'group';
 
     if (noteToSelf) {
@@ -144,7 +150,7 @@ export class Avatar extends React.Component<Props, State> {
 
     const hasImage = !noteToSelf && avatarPath && !imageBroken;
 
-    if (![28, 32, 52, 80, 112].includes(size)) {
+    if (![28, 32, 52, 80, 96, 112].includes(size)) {
       throw new Error(`Size ${size} is not supported!`);
     }
 

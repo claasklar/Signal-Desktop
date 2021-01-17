@@ -1,3 +1,6 @@
+// Copyright 2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable camelcase */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -100,6 +103,10 @@ export interface DataInterface {
   getMessageMetricsForConversation: (
     conversationId: string
   ) => Promise<ConverationMetricsType>;
+  hasGroupCallHistoryMessage: (
+    conversationId: string,
+    eraId: string
+  ) => Promise<boolean>;
   migrateConversationMessages: (
     obsoleteId: string,
     currentId: string

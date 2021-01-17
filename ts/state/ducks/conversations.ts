@@ -1,4 +1,8 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable camelcase */
+import { ThunkAction } from 'redux-thunk';
 import {
   difference,
   fromPairs,
@@ -10,10 +14,16 @@ import {
   values,
   without,
 } from 'lodash';
+
+import { StateType as RootStateType } from '../reducer';
+import { calling } from '../../services/calling';
+import { getOwn } from '../../util/getOwn';
 import { trigger } from '../../shims/events';
 import { NoopActionType } from './noop';
 import { AttachmentType } from '../../types/Attachment';
 import { ColorType } from '../../types/Colors';
+import { BodyRangeType } from '../../types/Util';
+import { CallMode, CallHistoryDetailsFromDiskType } from '../../types/Calling';
 
 // State
 
@@ -42,26 +52,35 @@ export type ConversationType = {
   firstName?: string;
   profileName?: string;
   avatarPath?: string;
+  areWeAdmin?: boolean;
   areWePending?: boolean;
+  canChangeTimer?: boolean;
   color?: ColorType;
+  isAccepted?: boolean;
   isArchived?: boolean;
   isBlocked?: boolean;
+  isGroupV1AndDisabled?: boolean;
   isPinned?: boolean;
+  isUntrusted?: boolean;
   isVerified?: boolean;
   activeAt?: number;
   timestamp?: number;
   inboxPosition?: number;
+  left?: boolean;
   lastMessage?: {
     status: LastMessageStatus;
     text: string;
     deletedForEveryone?: boolean;
   };
+  markedUnread?: boolean;
   phoneNumber?: string;
   membersCount?: number;
+  expireTimer?: number;
+  members?: Array<ConversationType>;
   muteExpiresAt?: number;
   type: ConversationTypeType;
   isMe?: boolean;
-  lastUpdated: number;
+  lastUpdated?: number;
   title: string;
   unreadCount?: number;
   isSelected?: boolean;
@@ -75,13 +94,17 @@ export type ConversationType = {
 
   shouldShowDraft?: boolean;
   draftText?: string | null;
+  draftBodyRanges?: Array<BodyRangeType>;
   draftPreview?: string;
 
   sharedGroupNames?: Array<string>;
   groupVersion?: 1 | 2;
+  groupId?: string;
   isMissingMandatoryProfileSharing?: boolean;
   messageRequestsEnabled?: boolean;
   acceptedMessageRequest?: boolean;
+  secretParams?: string;
+  publicParams?: string;
 };
 export type ConversationLookupType = {
   [key: string]: ConversationType;
@@ -106,7 +129,8 @@ export type MessageType = {
   attachments: Array<AttachmentType>;
   sticker: {
     data?: {
-      pending: boolean;
+      pending?: boolean;
+      blurHash?: string;
     };
   };
   unread: boolean;
@@ -127,6 +151,7 @@ export type MessageType = {
 
   errors?: Array<Error>;
   group_update?: unknown;
+  callHistoryDetails?: CallHistoryDetailsFromDiskType;
 
   // No need to go beyond this; unused at this stage, since this goes into
   //   a reducer still in plain JavaScript and comes out well-formed
@@ -167,11 +192,37 @@ export type ConversationsStateType = {
   selectedConversation?: string;
   selectedMessage?: string;
   selectedMessageCounter: number;
+  selectedConversationPanelDepth: number;
   showArchived: boolean;
 
   // Note: it's very important that both of these locations are always kept up to date
   messagesLookup: MessageLookupType;
   messagesByConversation: MessagesByConversationType;
+};
+
+// Helpers
+
+export const getConversationCallMode = (
+  conversation: ConversationType
+): CallMode => {
+  if (
+    conversation.left ||
+    conversation.isBlocked ||
+    conversation.isMe ||
+    !conversation.acceptedMessageRequest
+  ) {
+    return CallMode.None;
+  }
+
+  if (conversation.type === 'direct') {
+    return CallMode.Direct;
+  }
+
+  if (conversation.type === 'group' && conversation.groupVersion === 2) {
+    return CallMode.Group;
+  }
+
+  return CallMode.None;
 };
 
 // Actions
@@ -228,6 +279,13 @@ export type MessageDeletedActionType = {
     conversationId: string;
   };
 };
+type MessageSizeChangedActionType = {
+  type: 'MESSAGE_SIZE_CHANGED';
+  payload: {
+    id: string;
+    conversationId: string;
+  };
+};
 export type MessagesAddedActionType = {
   type: 'MESSAGES_ADDED';
   payload: {
@@ -235,6 +293,19 @@ export type MessagesAddedActionType = {
     messages: Array<MessageType>;
     isNewMessage: boolean;
     isActive: boolean;
+  };
+};
+
+export type RepairNewestMessageActionType = {
+  type: 'REPAIR_NEWEST_MESSAGE';
+  payload: {
+    conversationId: string;
+  };
+};
+export type RepairOldestMessageActionType = {
+  type: 'REPAIR_OLDEST_MESSAGE';
+  payload: {
+    conversationId: string;
   };
 };
 export type MessagesResetActionType = {
@@ -269,6 +340,10 @@ export type SetIsNearBottomActionType = {
     conversationId: string;
     isNearBottom: boolean;
   };
+};
+export type SetSelectedConversationPanelDepthActionType = {
+  type: 'SET_SELECTED_CONVERSATION_PANEL_DEPTH';
+  payload: { panelDepth: number };
 };
 export type ScrollToMessageActionType = {
   type: 'SCROLL_TO_MESSAGE';
@@ -316,9 +391,12 @@ export type ConversationActionType =
   | ConversationUnloadedActionType
   | RemoveAllConversationsActionType
   | MessageSelectedActionType
+  | MessageSizeChangedActionType
   | MessageChangedActionType
   | MessageDeletedActionType
   | MessagesAddedActionType
+  | RepairNewestMessageActionType
+  | RepairOldestMessageActionType
   | MessagesResetActionType
   | SetMessagesLoadingActionType
   | SetIsNearBottomActionType
@@ -327,6 +405,7 @@ export type ConversationActionType =
   | ClearSelectedMessageActionType
   | ClearUnreadMetricsActionType
   | ScrollToMessageActionType
+  | SetSelectedConversationPanelDepthActionType
   | SelectedConversationChangedActionType
   | MessageDeletedActionType
   | SelectedConversationChangedActionType
@@ -344,11 +423,13 @@ export const actions = {
   selectMessage,
   messageDeleted,
   messageChanged,
+  messageSizeChanged,
   messagesAdded,
   messagesReset,
   setMessagesLoading,
   setLoadCountdownStart,
   setIsNearBottom,
+  setSelectedConversationPanelDepth,
   clearChangedMessages,
   clearSelectedMessage,
   clearUnreadMetrics,
@@ -357,6 +438,8 @@ export const actions = {
   openConversationExternal,
   showInbox,
   showArchivedConversations,
+  repairNewestMessage,
+  repairOldestMessage,
 };
 
 function conversationAdded(
@@ -374,13 +457,17 @@ function conversationAdded(
 function conversationChanged(
   id: string,
   data: ConversationType
-): ConversationChangedActionType {
-  return {
-    type: 'CONVERSATION_CHANGED',
-    payload: {
-      id,
-      data,
-    },
+): ThunkAction<void, RootStateType, unknown, ConversationChangedActionType> {
+  return dispatch => {
+    calling.groupMembersChanged(id);
+
+    dispatch({
+      type: 'CONVERSATION_CHANGED',
+      payload: {
+        id,
+        data,
+      },
+    });
   };
 }
 function conversationRemoved(id: string): ConversationRemovedActionType {
@@ -445,6 +532,18 @@ function messageDeleted(
     },
   };
 }
+function messageSizeChanged(
+  id: string,
+  conversationId: string
+): MessageSizeChangedActionType {
+  return {
+    type: 'MESSAGE_SIZE_CHANGED',
+    payload: {
+      id,
+      conversationId,
+    },
+  };
+}
 function messagesAdded(
   conversationId: string,
   messages: Array<MessageType>,
@@ -461,6 +560,28 @@ function messagesAdded(
     },
   };
 }
+
+function repairNewestMessage(
+  conversationId: string
+): RepairNewestMessageActionType {
+  return {
+    type: 'REPAIR_NEWEST_MESSAGE',
+    payload: {
+      conversationId,
+    },
+  };
+}
+function repairOldestMessage(
+  conversationId: string
+): RepairOldestMessageActionType {
+  return {
+    type: 'REPAIR_OLDEST_MESSAGE',
+    payload: {
+      conversationId,
+    },
+  };
+}
+
 function messagesReset(
   conversationId: string,
   messages: Array<MessageType>,
@@ -513,6 +634,14 @@ function setIsNearBottom(
       conversationId,
       isNearBottom,
     },
+  };
+}
+function setSelectedConversationPanelDepth(
+  panelDepth: number
+): SetSelectedConversationPanelDepthActionType {
+  return {
+    type: 'SET_SELECTED_CONVERSATION_PANEL_DEPTH',
+    payload: { panelDepth },
   };
 }
 function clearChangedMessages(
@@ -598,13 +727,14 @@ function showArchivedConversations(): ShowArchivedConversationsActionType {
 
 // Reducer
 
-function getEmptyState(): ConversationsStateType {
+export function getEmptyState(): ConversationsStateType {
   return {
     conversationLookup: {},
     messagesByConversation: {},
     messagesLookup: {},
     selectedMessageCounter: 0,
     showArchived: false,
+    selectedConversationPanelDepth: 0,
   };
 }
 
@@ -635,6 +765,7 @@ function hasMessageHeightChanged(
     message.sticker.data &&
     previous.sticker &&
     previous.sticker.data &&
+    !previous.sticker.data.blurHash &&
     previous.sticker.data.pending !== message.sticker.data.pending;
   if (stickerPendingChanged) {
     return true;
@@ -680,8 +811,8 @@ function hasMessageHeightChanged(
 }
 
 export function reducer(
-  state: ConversationsStateType = getEmptyState(),
-  action: ConversationActionType
+  state: Readonly<ConversationsStateType> = getEmptyState(),
+  action: Readonly<ConversationActionType>
 ): ConversationsStateType {
   if (action.type === 'CONVERSATION_ADDED') {
     const { payload } = action;
@@ -760,12 +891,19 @@ export function reducer(
     return {
       ...state,
       selectedConversation,
+      selectedConversationPanelDepth: 0,
       messagesLookup: omit(state.messagesLookup, messageIds),
       messagesByConversation: omit(state.messagesByConversation, [id]),
     };
   }
   if (action.type === 'CONVERSATIONS_REMOVE_ALL') {
     return getEmptyState();
+  }
+  if (action.type === 'SET_SELECTED_CONVERSATION_PANEL_DEPTH') {
+    return {
+      ...state,
+      selectedConversationPanelDepth: action.payload.panelDepth,
+    };
   }
   if (action.type === 'MESSAGE_SELECTED') {
     const { messageId, conversationId } = action.payload;
@@ -814,6 +952,31 @@ export function reducer(
         [conversationId]: {
           ...existingConversation,
           heightChangeMessageIds: updatedChanges,
+        },
+      },
+    };
+  }
+  if (action.type === 'MESSAGE_SIZE_CHANGED') {
+    const { id, conversationId } = action.payload;
+
+    const existingConversation = getOwn(
+      state.messagesByConversation,
+      conversationId
+    );
+    if (!existingConversation) {
+      return state;
+    }
+
+    return {
+      ...state,
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        [conversationId]: {
+          ...existingConversation,
+          heightChangeMessageIds: uniq([
+            ...existingConversation.heightChangeMessageIds,
+            id,
+          ]),
         },
       },
     };
@@ -1052,6 +1215,68 @@ export function reducer(
       },
     };
   }
+
+  if (action.type === 'REPAIR_NEWEST_MESSAGE') {
+    const { conversationId } = action.payload;
+    const { messagesByConversation, messagesLookup } = state;
+
+    const existingConversation = getOwn(messagesByConversation, conversationId);
+    if (!existingConversation) {
+      return state;
+    }
+
+    const { messageIds } = existingConversation;
+    const lastId =
+      messageIds && messageIds.length
+        ? messageIds[messageIds.length - 1]
+        : undefined;
+    const last = lastId ? getOwn(messagesLookup, lastId) : undefined;
+    const newest = last ? pick(last, ['id', 'received_at']) : undefined;
+
+    return {
+      ...state,
+      messagesByConversation: {
+        ...messagesByConversation,
+        [conversationId]: {
+          ...existingConversation,
+          metrics: {
+            ...existingConversation.metrics,
+            newest,
+          },
+        },
+      },
+    };
+  }
+
+  if (action.type === 'REPAIR_OLDEST_MESSAGE') {
+    const { conversationId } = action.payload;
+    const { messagesByConversation, messagesLookup } = state;
+
+    const existingConversation = getOwn(messagesByConversation, conversationId);
+    if (!existingConversation) {
+      return state;
+    }
+
+    const { messageIds } = existingConversation;
+    const firstId = messageIds && messageIds.length ? messageIds[0] : undefined;
+    const first = firstId ? getOwn(messagesLookup, firstId) : undefined;
+    const oldest = first ? pick(first, ['id', 'received_at']) : undefined;
+
+    return {
+      ...state,
+      messagesByConversation: {
+        ...messagesByConversation,
+        [conversationId]: {
+          ...existingConversation,
+          metrics: {
+            ...existingConversation.metrics,
+            oldest,
+          },
+        },
+      },
+    };
+  }
+
   if (action.type === 'MESSAGES_ADDED') {
     const { conversationId, isActive, isNewMessage, messages } = action.payload;
     const { messagesByConversation, messagesLookup } = state;
