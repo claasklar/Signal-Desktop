@@ -3332,6 +3332,7 @@ type WhatIsThis = import('./window.d').WhatIsThis;
     });
 
     const groups = allConversations
+      .filter(conversation => conversation.isGroupV1())
       .map(conversation => conversation.attributes)
       .filter(conversation => conversation.type === 'group')
       .map(attributes => {
