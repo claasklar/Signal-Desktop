@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import memoizee from 'memoizee';
 import { createSelector } from 'reselect';
 import { getSearchResultsProps } from '../../shims/Whisper';
@@ -21,7 +24,8 @@ import {
 } from '../../components/SearchResults';
 import { PropsDataType as MessageSearchResultPropsDataType } from '../../components/MessageSearchResult';
 
-import { getRegionCode, getUserAgent, getUserNumber } from './user';
+import { getRegionCode, getUserNumber } from './user';
+import { getUserAgent } from './items';
 import {
   GetConversationByIdType,
   getConversationLookup,

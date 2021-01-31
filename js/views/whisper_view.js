@@ -1,3 +1,6 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* global Whisper, Backbone, Mustache, _, $ */
 
 /*
@@ -21,7 +24,7 @@
  */
 
 // eslint-disable-next-line func-names
-(function() {
+(function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.View = Backbone.View.extend(

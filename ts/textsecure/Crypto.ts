@@ -1,3 +1,6 @@
+// Copyright 2020-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-bitwise */
 /* eslint-disable more/no-then */
@@ -104,6 +107,8 @@ const PROFILE_IV_LENGTH = 12; // bytes
 const PROFILE_KEY_LENGTH = 32; // bytes
 const PROFILE_TAG_LENGTH = 128; // bits
 const PROFILE_NAME_PADDED_LENGTH = 53; // bytes
+const PROFILE_ABOUT_PADDED_LENGTH = 128;
+const PROFILE_EMOJI_PADDED_LENGTH = 32;
 
 interface EncryptedAttachment {
   ciphertext: ArrayBuffer;
@@ -381,6 +386,24 @@ const Crypto = {
           : null,
       };
     });
+  },
+
+  encryptProfileAbout(
+    about: ArrayBuffer,
+    key: ArrayBuffer
+  ): Promise<ArrayBuffer> {
+    const padded = new Uint8Array(PROFILE_ABOUT_PADDED_LENGTH);
+    padded.set(new Uint8Array(about));
+    return Crypto.encryptProfile(padded.buffer as ArrayBuffer, key);
+  },
+
+  encryptProfileEmoji(
+    emoji: ArrayBuffer,
+    key: ArrayBuffer
+  ): Promise<ArrayBuffer> {
+    const padded = new Uint8Array(PROFILE_EMOJI_PADDED_LENGTH);
+    padded.set(new Uint8Array(emoji));
+    return Crypto.encryptProfile(padded.buffer as ArrayBuffer, key);
   },
 
   getRandomBytes(size: number): ArrayBuffer {

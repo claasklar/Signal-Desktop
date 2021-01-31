@@ -1,4 +1,7 @@
-import * as React from 'react';
+// Copyright 2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
+import React, { ComponentProps } from 'react';
 
 import { storiesOf } from '@storybook/react';
 import { action } from '@storybook/addon-actions';
@@ -7,9 +10,7 @@ import { setup as setupI18n } from '../../../js/modules/i18n';
 import enMessages from '../../../_locales/en/messages.json';
 import {
   ConversationHeader,
-  PropsActionsType,
-  PropsHousekeepingType,
-  PropsType,
+  OutgoingCallButtonStyle,
 } from './ConversationHeader';
 import { gifUrl } from '../../storybook/Fixtures';
 
@@ -21,11 +22,17 @@ type ConversationHeaderStory = {
   description: string;
   items: Array<{
     title: string;
-    props: PropsType;
+    props: ComponentProps<typeof ConversationHeader>;
   }>;
 };
 
-const actionProps: PropsActionsType = {
+const commonProps = {
+  showBackButton: false,
+  outgoingCallButtonStyle: OutgoingCallButtonStyle.Both,
+  markedUnread: false,
+
+  i18n,
+
   onSetDisappearingMessages: action('onSetDisappearingMessages'),
   onDeleteMessages: action('onDeleteMessages'),
   onResetSession: action('onResetSession'),
@@ -44,13 +51,10 @@ const actionProps: PropsActionsType = {
   onGoBack: action('onGoBack'),
 
   onArchive: action('onArchive'),
+  onMarkUnread: action('onMarkUnread'),
   onMoveToInbox: action('onMoveToInbox'),
   onSetPin: action('onSetPin'),
   onNameChange: action('onNameChange'),
-};
-
-const housekeepingProps: PropsHousekeepingType = {
-  i18n,
 };
 
 const stories: Array<ConversationHeaderStory> = [
@@ -62,6 +66,7 @@ const stories: Array<ConversationHeaderStory> = [
       {
         title: 'With name and profile, verified',
         props: {
+          ...commonProps,
           color: 'red',
           isVerified: true,
           avatarPath: gifUrl,
@@ -72,13 +77,12 @@ const stories: Array<ConversationHeaderStory> = [
           id: '1',
           profileName: '🔥Flames🔥',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'With name, not verified, no avatar',
         props: {
+          ...commonProps,
           color: 'blue',
           isVerified: false,
           title: 'Someone 🔥 Somewhere',
@@ -87,13 +91,12 @@ const stories: Array<ConversationHeaderStory> = [
           type: 'direct',
           id: '2',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'With name, not verified, descenders',
         props: {
+          ...commonProps,
           color: 'blue',
           isVerified: false,
           title: 'Joyrey 🔥 Leppey',
@@ -102,13 +105,12 @@ const stories: Array<ConversationHeaderStory> = [
           type: 'direct',
           id: '2',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'Profile, no name',
         props: {
+          ...commonProps,
           color: 'teal',
           isVerified: false,
           phoneNumber: '(202) 555-0003',
@@ -117,25 +119,23 @@ const stories: Array<ConversationHeaderStory> = [
           title: '🔥Flames🔥',
           profileName: '🔥Flames🔥',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'No name, no profile, no color',
         props: {
+          ...commonProps,
           title: '(202) 555-0011',
           phoneNumber: '(202) 555-0011',
           type: 'direct',
           id: '11',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'With back button',
         props: {
+          ...commonProps,
           showBackButton: true,
           color: 'deep_orange',
           phoneNumber: '(202) 555-0004',
@@ -143,46 +143,32 @@ const stories: Array<ConversationHeaderStory> = [
           type: 'direct',
           id: '4',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'Disappearing messages set',
         props: {
+          ...commonProps,
           color: 'indigo',
           title: '(202) 555-0005',
           phoneNumber: '(202) 555-0005',
           type: 'direct',
           id: '5',
-          expirationSettingName: '10 seconds',
-          timerOptions: [
-            {
-              name: 'off',
-              value: 0,
-            },
-            {
-              name: '10 seconds',
-              value: 10,
-            },
-          ],
+          expireTimer: 10,
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
         },
       },
       {
         title: 'Muting Conversation',
         props: {
+          ...commonProps,
           color: 'ultramarine',
           title: '(202) 555-0006',
           phoneNumber: '(202) 555-0006',
           type: 'direct',
           id: '6',
-          muteExpirationLabel: '10/18/3000, 11:11 AM',
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
+          muteExpiresAt: new Date('3000-10-18T11:11:11Z').valueOf(),
         },
       },
     ],
@@ -195,52 +181,47 @@ const stories: Array<ConversationHeaderStory> = [
       {
         title: 'Basic',
         props: {
+          ...commonProps,
           color: 'signal-blue',
           title: 'Typescript support group',
           name: 'Typescript support group',
           phoneNumber: '',
           id: '1',
           type: 'group',
-          expirationSettingName: '10 seconds',
-          timerOptions: [
-            {
-              name: 'off',
-              value: 0,
-            },
-            {
-              name: '10 seconds',
-              value: 10,
-            },
-          ],
+          expireTimer: 10,
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
+          outgoingCallButtonStyle: OutgoingCallButtonStyle.JustVideo,
         },
       },
       {
         title: 'In a group you left - no disappearing messages',
         props: {
+          ...commonProps,
           color: 'signal-blue',
           title: 'Typescript support group',
           name: 'Typescript support group',
           phoneNumber: '',
           id: '2',
           type: 'group',
-          disableTimerChanges: true,
-          expirationSettingName: '10 seconds',
-          timerOptions: [
-            {
-              name: 'off',
-              value: 0,
-            },
-            {
-              name: '10 seconds',
-              value: 10,
-            },
-          ],
+          left: true,
+          expireTimer: 10,
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
+          outgoingCallButtonStyle: OutgoingCallButtonStyle.JustVideo,
+        },
+      },
+      {
+        title: 'In a group with an active group call',
+        props: {
+          ...commonProps,
+          color: 'signal-blue',
+          title: 'Typescript support group',
+          name: 'Typescript support group',
+          phoneNumber: '',
+          id: '1',
+          type: 'group',
+          expireTimer: 10,
+          acceptedMessageRequest: true,
+          outgoingCallButtonStyle: OutgoingCallButtonStyle.Join,
         },
       },
     ],
@@ -252,6 +233,7 @@ const stories: Array<ConversationHeaderStory> = [
       {
         title: 'In chat with yourself',
         props: {
+          ...commonProps,
           color: 'blue',
           title: '(202) 555-0007',
           phoneNumber: '(202) 555-0007',
@@ -259,8 +241,7 @@ const stories: Array<ConversationHeaderStory> = [
           type: 'direct',
           isMe: true,
           acceptedMessageRequest: true,
-          ...actionProps,
-          ...housekeepingProps,
+          outgoingCallButtonStyle: OutgoingCallButtonStyle.None,
         },
       },
     ],
@@ -272,6 +253,7 @@ const stories: Array<ConversationHeaderStory> = [
       {
         title: '1:1 conversation',
         props: {
+          ...commonProps,
           color: 'blue',
           title: '(202) 555-0007',
           phoneNumber: '(202) 555-0007',
@@ -279,8 +261,7 @@ const stories: Array<ConversationHeaderStory> = [
           type: 'direct',
           isMe: false,
           acceptedMessageRequest: false,
-          ...actionProps,
-          ...housekeepingProps,
+          outgoingCallButtonStyle: OutgoingCallButtonStyle.None,
         },
       },
     ],

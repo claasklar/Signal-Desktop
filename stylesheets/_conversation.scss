@@ -1,3 +1,6 @@
+// Copyright 2015-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 @import './mixins';
 
 @keyframes panel--in {
@@ -33,9 +36,9 @@
     z-index: 1;
     position: absolute;
     left: 0;
-    top: 48px;
+    top: $header-height;
     width: 100%;
-    height: calc(100% - 48px);
+    height: calc(100% - $header-height);
 
     @include light-theme() {
       background-color: $color-white;

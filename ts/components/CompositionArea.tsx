@@ -1,5 +1,7 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import * as React from 'react';
-import { Editor } from 'draft-js';
 import { get, noop } from 'lodash';
 import classNames from 'classnames';
 import { EmojiButton, Props as EmojiButtonProps } from './emoji/EmojiButton';
@@ -16,6 +18,10 @@ import {
   MessageRequestActions,
   Props as MessageRequestActionsProps,
 } from './conversation/MessageRequestActions';
+import {
+  GroupV1DisabledActions,
+  PropsType as GroupV1DisabledActionsPropsType,
+} from './conversation/GroupV1DisabledActions';
 import { MandatoryProfileSharingActions } from './conversation/MandatoryProfileSharingActions';
 import { countStickers } from './stickers/lib';
 import { LocalizerType } from '../types/Util';
@@ -25,6 +31,7 @@ export type OwnProps = {
   readonly i18n: LocalizerType;
   readonly areWePending?: boolean;
   readonly groupVersion?: 1 | 2;
+  readonly isGroupV1AndDisabled?: boolean;
   readonly isMissingMandatoryProfileSharing?: boolean;
   readonly messageRequestsEnabled?: boolean;
   readonly acceptedMessageRequest?: boolean;
@@ -46,11 +53,12 @@ export type OwnProps = {
 
 export type Props = Pick<
   CompositionInputProps,
+  | 'members'
   | 'onSubmit'
-  | 'onEditorSizeChange'
   | 'onEditorStateChange'
   | 'onTextTooLong'
-  | 'startingText'
+  | 'draftText'
+  | 'draftBodyRanges'
   | 'clearQuotedMessage'
   | 'getQuotedMessage'
 > &
@@ -74,6 +82,7 @@ export type Props = Pick<
     | 'clearShowPickerHint'
   > &
   MessageRequestActionsProps &
+  Pick<GroupV1DisabledActionsPropsType, 'onStartGroupMigration'> &
   OwnProps;
 
 const emptyElement = (el: HTMLElement) => {
@@ -90,12 +99,13 @@ export const CompositionArea = ({
   // CompositionInput
   onSubmit,
   compositionApi,
-  onEditorSizeChange,
   onEditorStateChange,
   onTextTooLong,
-  startingText,
+  draftText,
+  draftBodyRanges,
   clearQuotedMessage,
   getQuotedMessage,
+  members,
   // EmojiButton
   onPickEmoji,
   onSetSkinTone,
@@ -131,13 +141,15 @@ export const CompositionArea = ({
   phoneNumber,
   profileName,
   title,
+  // GroupV1 Disabled Actions
+  isGroupV1AndDisabled,
+  onStartGroupMigration,
 }: Props): JSX.Element => {
   const [disabled, setDisabled] = React.useState(false);
-  const [showMic, setShowMic] = React.useState(!startingText);
+  const [showMic, setShowMic] = React.useState(!draftText);
   const [micActive, setMicActive] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
   const [large, setLarge] = React.useState(false);
-  const editorRef = React.useRef<Editor>(null);
   const inputApiRef = React.useRef<InputApi | undefined>();
 
   const handleForceSend = React.useCallback(() => {
@@ -156,10 +168,10 @@ export const CompositionArea = ({
   );
 
   const focusInput = React.useCallback(() => {
-    if (editorRef.current) {
-      editorRef.current.focus();
+    if (inputApiRef.current) {
+      inputApiRef.current.focus();
     }
-  }, [editorRef]);
+  }, [inputApiRef]);
 
   const withStickers =
     countStickers({
@@ -334,8 +346,9 @@ export const CompositionArea = ({
   }, [setLarge]);
 
   if (
-    messageRequestsEnabled &&
-    (!acceptedMessageRequest || isBlocked || areWePending)
+    isBlocked ||
+    areWePending ||
+    (messageRequestsEnabled && !acceptedMessageRequest)
   ) {
     return (
       <MessageRequestActions
@@ -377,6 +390,16 @@ export const CompositionArea = ({
     );
   }
 
+  // If this is a V1 group, now disabled entirely, we show UI to help them upgrade
+  if (isGroupV1AndDisabled) {
+    return (
+      <GroupV1DisabledActions
+        i18n={i18n}
+        onStartGroupMigration={onStartGroupMigration}
+      />
+    );
+  }
+
   return (
     <div className="module-composition-area">
       <div className="module-composition-area__toggle-large">
@@ -413,18 +436,18 @@ export const CompositionArea = ({
             i18n={i18n}
             disabled={disabled}
             large={large}
-            editorRef={editorRef}
             inputApi={inputApiRef}
             onPickEmoji={onPickEmoji}
             onSubmit={handleSubmit}
-            onEditorSizeChange={onEditorSizeChange}
             onEditorStateChange={onEditorStateChange}
             onTextTooLong={onTextTooLong}
             onDirtyChange={setDirty}
             skinTone={skinTone}
-            startingText={startingText}
+            draftText={draftText}
+            draftBodyRanges={draftBodyRanges}
             clearQuotedMessage={clearQuotedMessage}
             getQuotedMessage={getQuotedMessage}
+            members={members}
           />
         </div>
         {!large ? (

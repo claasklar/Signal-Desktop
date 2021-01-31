@@ -1,3 +1,6 @@
+// Copyright 2020-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import {
   AuthCredential,
   ClientZkAuthOperations,
@@ -125,6 +128,18 @@ export function deriveProfileKeyVersion(
   return profileKeyVersion.toString();
 }
 
+export function deriveProfileKeyCommitment(
+  profileKeyBase64: string,
+  uuid: string
+): ArrayBuffer {
+  const profileKeyArray = base64ToCompatArray(profileKeyBase64);
+  const profileKey = new ProfileKey(profileKeyArray);
+
+  const profileKeyCommitment = profileKey.getCommitment(uuid);
+
+  return compatArrayToArrayBuffer(profileKeyCommitment.serialize());
+}
+
 export function deriveGroupPublicParams(
   groupSecretParamsBuffer: ArrayBuffer
 ): ArrayBuffer {
@@ -145,10 +160,7 @@ export function deriveGroupID(
   );
 
   return compatArrayToArrayBuffer(
-    groupSecretParams
-      .getPublicParams()
-      .getGroupIdentifier()
-      .serialize()
+    groupSecretParams.getPublicParams().getGroupIdentifier().serialize()
   );
 }
 

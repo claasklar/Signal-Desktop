@@ -1,3 +1,6 @@
+// Copyright 2020-2021 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable more/no-then */
@@ -6,7 +9,7 @@
 import PQueue from 'p-queue';
 
 import EventTarget from './EventTarget';
-import { WebAPIType } from './WebAPI';
+import { WebAPIType, ProfileWrite } from './WebAPI';
 import MessageReceiver from './MessageReceiver';
 import { KeyPairType, SignedPreKeyType } from '../libsignal.d';
 import utils from './Helpers';
@@ -200,7 +203,10 @@ export default class AccountManager extends EventTarget {
             .then(async (keys: GeneratedKeysType) =>
               registerKeys(keys).then(async () => confirmKeys(keys))
             )
-            .then(async () => registrationDone({ number }));
+            .then(() => {
+              const uuid = window.textsecure.storage.user.getUuid();
+              registrationDone({ uuid, number, profileKey });
+            });
         }
       )
     );
@@ -752,7 +758,15 @@ export default class AccountManager extends EventTarget {
     });
   }
 
-  async registrationDone({ uuid, number }: { uuid?: string; number?: string }) {
+  async registrationDone({
+    uuid,
+    number,
+    profileKey,
+  }: {
+    uuid?: string;
+    number?: string;
+    profileKey?: ArrayBuffer;
+  }) {
     window.log.info('registration done');
 
     const conversationId = window.ConversationController.ensureContactIds({
@@ -764,8 +778,16 @@ export default class AccountManager extends EventTarget {
       throw new Error('registrationDone: no conversationId!');
     }
 
+    const conversation = window.ConversationController.get(conversationId);
+    if (conversation && profileKey) {
+      conversation.setProfileKey(
+        window.Signal.Crypto.arrayBufferToBase64(profileKey)
+      );
+    }
+    if (profileKey && uuid) {
+      await this.setVersionedProfile(uuid, profileKey);
+    }
     window.log.info('dispatching registration event');
-
     this.dispatchEvent(new Event('registration'));
   }
 
@@ -782,6 +804,48 @@ export default class AccountManager extends EventTarget {
           };
         });
     });
+  }
+
+  async setVersionedProfile(
+    uuid: string,
+    profileKey: ArrayBuffer
+  ): Promise<void> {
+    const profileKeyBase64 = window.Signal.Crypto.arrayBufferToBase64(
+      profileKey
+    );
+
+    const profileWrite: ProfileWrite = {
+      version: window.Signal.Util.zkgroup.deriveProfileKeyVersion(
+        profileKeyBase64,
+        uuid
+      ),
+      name: window.Signal.Crypto.arrayBufferToBase64(
+        await window.textsecure.crypto.encryptProfileName(
+          new ArrayBuffer(0),
+          profileKey
+        )
+      ),
+      about: window.Signal.Crypto.arrayBufferToBase64(
+        await window.textsecure.crypto.encryptProfileAbout(
+          new ArrayBuffer(0),
+          profileKey
+        )
+      ),
+      aboutEmoji: window.Signal.Crypto.arrayBufferToBase64(
+        await window.textsecure.crypto.encryptProfileEmoji(
+          new ArrayBuffer(0),
+          profileKey
+        )
+      ),
+      avatar: false,
+      commitment: window.Signal.Crypto.arrayBufferToBase64(
+        window.Signal.Util.zkgroup.deriveProfileKeyCommitment(
+          profileKeyBase64,
+          uuid
+        )
+      ),
+    };
+    return this.server.writeProfile(profileWrite);
   }
 
   async removeDevice(id: string): Promise<void> {

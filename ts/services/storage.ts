@@ -1,3 +1,6 @@
+// Copyright 2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import { debounce, isNumber, partition } from 'lodash';
 import pMap from 'p-map';
 
@@ -953,9 +956,9 @@ async function upload(): Promise<void> {
 
     return;
   }
-  if (!isEnabled('desktop.storageWrite')) {
+  if (!isEnabled('desktop.storageWrite2')) {
     window.log.info(
-      'storageService.upload: Not starting desktop.storageWrite is falsey'
+      'storageService.upload: Not starting desktop.storageWrite2 is falsey'
     );
 
     return;

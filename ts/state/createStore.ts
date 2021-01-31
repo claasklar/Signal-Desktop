@@ -1,3 +1,6 @@
+// Copyright 2019-2020 Signal Messenger, LLC
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /* eslint-disable no-console */
 
 import {
@@ -8,11 +11,13 @@ import {
 } from 'redux';
 
 import promise from 'redux-promise-middleware';
+import thunk from 'redux-thunk';
 import { createLogger } from 'redux-logger';
 
 import { reducer, StateType } from './reducer';
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface Console {
     _log: Console['log'];
   }
@@ -34,8 +39,11 @@ const logger = createLogger({
   logger: directConsole,
 });
 
-// Exclude logger if we're in production mode
-const middlewareList = env === 'production' ? [promise] : [promise, logger];
+const middlewareList = [
+  promise,
+  thunk,
+  ...(env === 'production' ? [] : [logger]),
+];
 
 const enhancer = applyMiddleware(...middlewareList);
 
