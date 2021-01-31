@@ -717,6 +717,15 @@ export type GroupLogResponseType = {
   changes: GroupChangesClass;
 };
 
+export type ProfileWrite = {
+  version: string;
+  name: string;
+  about: string;
+  aboutEmoji: string;
+  avatar: boolean;
+  commitment: string;
+};
+
 export type WebAPIType = {
   confirmCode: (
     number: string,
@@ -846,6 +855,7 @@ export type WebAPIType = {
     options: GroupCredentialsType
   ) => Promise<string>;
   whoami: () => Promise<any>;
+  writeProfile: (profile: ProfileWrite) => Promise<void>;
   getConfig: () => Promise<
     Array<{ name: string; enabled: boolean; value: string | null }>
   >;
@@ -1007,6 +1017,7 @@ export function initialize({
       setSignedPreKey,
       updateDeviceName,
       uploadGroupAvatar,
+      writeProfile,
       whoami,
     };
 
@@ -1074,6 +1085,16 @@ export function initialize({
       return _ajax({
         call: 'whoami',
         httpType: 'GET',
+        responseType: 'json',
+      });
+    }
+
+    async function writeProfile(profile: ProfileWrite): Promise<void> {
+      return _ajax({
+        call: 'profile',
+        contentType: 'application/json',
+        jsonData: profile,
+        httpType: 'PUT',
         responseType: 'json',
       });
     }
