@@ -145,6 +145,7 @@ declare global {
     baseAttachmentsPath: string;
     baseStickersPath: string;
     baseTempPath: string;
+    captchaRequired: () => void;
     dcodeIO: DCodeIOType;
     receivedAtCounter: number;
     enterKeyboardMode: () => void;
