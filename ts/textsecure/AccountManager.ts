@@ -178,6 +178,7 @@ export default class AccountManager extends EventTarget {
     const clearSessionsAndPreKeys = this.clearSessionsAndPreKeys.bind(this);
     const generateKeys = this.generateKeys.bind(this, 100);
     const confirmKeys = this.confirmKeys.bind(this);
+    const setupProfile = this.setupProfile.bind(this);
     const registrationDone = this.registrationDone.bind(this);
     return this.queueTask(async () =>
       window.libsignal.KeyHelper.generateIdentityKeyPair().then(
@@ -202,10 +203,11 @@ export default class AccountManager extends EventTarget {
             .then(async (keys: GeneratedKeysType) =>
               registerKeys(keys).then(async () => confirmKeys(keys))
             )
-            .then(() => {
+            .then(async () => {
               const uuid = window.textsecure.storage.user.getUuid();
-              registrationDone({ uuid, number, profileKey });
-            });
+              await setupProfile({ uuid, e164: number, profileKey });
+            })
+            .then(async () => registrationDone());
         }
       )
     );
@@ -313,9 +315,7 @@ export default class AccountManager extends EventTarget {
                                   confirmKeys(keys)
                                 )
                               )
-                              .then(async () =>
-                                registrationDone(provisionMessage)
-                              );
+                              .then(registrationDone);
                           }
                         )
                       )
@@ -621,6 +621,19 @@ export default class AccountManager extends EventTarget {
       );
     }
 
+    // This needs to be done very early, because it changes how things are saved in the
+    //   database. Your identity, for example, in the saveIdentityWithAttributes call
+    //   below.
+    const conversationId = window.ConversationController.ensureContactIds({
+      e164: number,
+      uuid,
+      highTrust: true,
+    });
+
+    if (!conversationId) {
+      throw new Error('registrationDone: no conversationId!');
+    }
+
     // update our own identity key, which may have changed
     // if we're relinking after a reinstall on the master device
     await window.textsecure.storage.protocol.saveIdentityWithAttributes(
@@ -753,19 +766,22 @@ export default class AccountManager extends EventTarget {
     });
   }
 
-  async registrationDone({
+  async registrationDone() {
+    window.log.info('registration done');
+    this.dispatchEvent(new Event('registration'));
+  }
+
+  async setupProfile({
     uuid,
-    number,
+    e164,
     profileKey,
   }: {
     uuid?: string;
-    number?: string;
-    profileKey?: ArrayBuffer;
+    e164: string;
+    profileKey: ArrayBuffer;
   }) {
-    window.log.info('registration done');
-
     const conversationId = window.ConversationController.ensureContactIds({
-      e164: number,
+      e164,
       uuid,
       highTrust: true,
     });
@@ -782,8 +798,6 @@ export default class AccountManager extends EventTarget {
     if (profileKey && uuid) {
       await this.setVersionedProfile(uuid, profileKey);
     }
-    window.log.info('dispatching registration event');
-    this.dispatchEvent(new Event('registration'));
   }
 
   async getDevices(): Promise<Array<any>> {
