@@ -195,7 +195,6 @@ export default class AccountManager extends EventTarget {
             null,
             null,
             null,
-            null,
             { accessKey }
           )
             .then(clearSessionsAndPreKeys)
@@ -303,7 +302,6 @@ export default class AccountManager extends EventTarget {
                               provisionMessage.identityKeyPair,
                               provisionMessage.profileKey,
                               deviceName,
-                              provisionMessage.uuid || null,
                               provisionMessage.userAgent,
                               provisionMessage.readReceipts,
                               { uuid: provisionMessage.uuid }
@@ -524,12 +522,11 @@ export default class AccountManager extends EventTarget {
     identityKeyPair: KeyPairType,
     profileKey: ArrayBuffer | undefined,
     deviceName: string | null,
-    uuid: string | null,
     userAgent?: string | null,
     readReceipts?: boolean | null,
     options: { accessKey?: ArrayBuffer; uuid?: string } = {}
   ): Promise<void> {
-    const { accessKey } = options;
+    const { accessKey, uuid } = options;
     let password = btoa(
       utils.getString(window.libsignal.crypto.getRandomBytes(16))
     );
@@ -568,8 +565,7 @@ export default class AccountManager extends EventTarget {
     );
 
     const numberChanged = previousNumber && previousNumber !== number;
-    const uuidChanged =
-      previousUuid && response.uuid && previousUuid !== response.uuid;
+    const uuidChanged = previousUuid && uuid && previousUuid !== uuid;
 
     if (numberChanged || uuidChanged) {
       if (numberChanged) {
@@ -618,10 +614,9 @@ export default class AccountManager extends EventTarget {
       deviceName
     );
 
-    const setUuid = response.uuid || uuid;
-    if (setUuid) {
+    if (uuid || response.uuid) {
       await window.textsecure.storage.user.setUuidAndDeviceId(
-        setUuid,
+        uuid || response.uuid,
         response.deviceId || 1
       );
     }
@@ -629,7 +624,7 @@ export default class AccountManager extends EventTarget {
     // update our own identity key, which may have changed
     // if we're relinking after a reinstall on the master device
     await window.textsecure.storage.protocol.saveIdentityWithAttributes(
-      setUuid,
+      uuid || response.uuid,
       {
         publicKey: identityKeyPair.pubKey,
         firstUse: true,
