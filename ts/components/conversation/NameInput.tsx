@@ -1,17 +1,17 @@
 import React from 'react';
 import { LocalizerType } from '../../types/Util';
 
-interface PropsDataType {
+type PropsDataType = {
   name: string;
-}
+};
 
-interface PropsActionsType {
+type PropsActionsType = {
   onNameChange: (name: string) => void;
-}
+};
 
-interface PropsHousekeepingType {
+type PropsHousekeepingType = {
   i18n: LocalizerType;
-}
+};
 
 export type PropsType = PropsDataType &
   PropsActionsType &

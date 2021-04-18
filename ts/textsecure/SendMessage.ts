@@ -35,6 +35,7 @@ import {
   GroupChangeClass,
   GroupClass,
   GroupExternalCredentialClass,
+  GroupJoinInfoClass,
   StorageServiceCallOptionsType,
   StorageServiceCredentials,
   SyncMessageClass,
@@ -72,10 +73,10 @@ export type SendOptionsType = {
   online?: boolean;
 };
 
-export interface CustomError extends Error {
+export type CustomError = Error & {
   identifier?: string;
   number?: string;
-}
+};
 
 export type CallbackResultType = {
   successfulIdentifiers?: Array<any>;
@@ -107,9 +108,9 @@ type GroupV1InfoType = {
   members: Array<string>;
 };
 
-interface GroupCallUpdateType {
+type GroupCallUpdateType = {
   eraId: string;
-}
+};
 
 type MessageOptionsType = {
   attachments?: Array<AttachmentType> | null;
@@ -1832,6 +1833,13 @@ export default class MessageSender {
     return this.server.getGroup(options);
   }
 
+  async getGroupFromLink(
+    groupInviteLink: string,
+    auth: GroupCredentialsType
+  ): Promise<GroupJoinInfoClass> {
+    return this.server.getGroupFromLink(groupInviteLink, auth);
+  }
+
   async getGroupLog(
     startVersion: number,
     options: GroupCredentialsType
@@ -1845,9 +1853,10 @@ export default class MessageSender {
 
   async modifyGroup(
     changes: GroupChangeClass.Actions,
-    options: GroupCredentialsType
+    options: GroupCredentialsType,
+    inviteLinkBase64?: string
   ): Promise<GroupChangeClass> {
-    return this.server.modifyGroup(changes, options);
+    return this.server.modifyGroup(changes, options, inviteLinkBase64);
   }
 
   async leaveGroup(
