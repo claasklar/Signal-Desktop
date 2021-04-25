@@ -1,11 +1,11 @@
-/* global Whisper, i18n */
+/* global Whisper, i18n, $ */
 
 // eslint-disable-next-line func-names
 (function () {
   window.Whisper = window.Whisper || {};
 
   Whisper.DeviceListRowView = Whisper.View.extend({
-    templateName: 'deviceListRow',
+    template: () => $('#deviceListRow').html(),
     initialize() {
       this._outer_render();
     },

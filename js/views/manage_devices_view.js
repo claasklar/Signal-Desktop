@@ -1,4 +1,4 @@
-/* global Whisper, getAccountManager, i18n */
+/* global Whisper, getAccountManager, i18n, $ */
 
 /* eslint-disable more/no-then */
 
@@ -7,7 +7,7 @@
   window.Whisper = window.Whisper || {};
 
   Whisper.ManageDevicesView = Whisper.View.extend({
-    templateName: 'manageDevices',
+    template: () => $('#manageDevices').html(),
     className: 'full-screen-flow',
     initialize() {
       this._outer_render();
