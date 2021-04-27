@@ -1,4 +1,4 @@
-/* global Whisper, getAccountManager, i18n, textsecure */
+/* global Whisper, getAccountManager, i18n, textsecure, $ */
 
 /* eslint-disable more/no-then */
 
@@ -7,7 +7,7 @@
   window.Whisper = window.Whisper || {};
 
   Whisper.AddDeviceView = Whisper.View.extend({
-    templateName: 'addDevice',
+    template: () => $('#addDevice').html(),
     className: 'full-screen-flow',
     initialize() {
       this.$('statusMessage').hide();

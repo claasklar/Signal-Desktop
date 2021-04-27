@@ -48,6 +48,7 @@ import {
   LinkPreviewImage,
   LinkPreviewMetadata,
 } from '../linkPreviews/linkPreviewFetch';
+import { SerializedCertificateType } from '../metadata/SecretSessionCipher';
 
 function stringToArrayBuffer(str: string): ArrayBuffer {
   if (typeof str !== 'string') {
@@ -68,7 +69,7 @@ export type SendMetadataType = {
 };
 
 export type SendOptionsType = {
-  senderCertificate?: ArrayBuffer;
+  senderCertificate?: SerializedCertificateType;
   sendMetadata?: SendMetadataType;
   online?: boolean;
 };
@@ -173,7 +174,6 @@ class Message {
   reaction?: {
     emoji?: string;
     remove?: boolean;
-    targetAuthorE164?: string;
     targetAuthorUuid?: string;
     targetTimestamp?: number;
   };
@@ -316,7 +316,6 @@ class Message {
       proto.reaction = new window.textsecure.protobuf.DataMessage.Reaction();
       proto.reaction.emoji = this.reaction.emoji || null;
       proto.reaction.remove = this.reaction.remove || false;
-      proto.reaction.targetAuthorE164 = this.reaction.targetAuthorE164 || null;
       proto.reaction.targetAuthorUuid = this.reaction.targetAuthorUuid || null;
       proto.reaction.targetTimestamp = this.reaction.targetTimestamp || null;
     }
@@ -806,12 +805,7 @@ export default class MessageSender {
   createSyncMessage(): SyncMessageClass {
     const syncMessage = new window.textsecure.protobuf.SyncMessage();
 
-    // Generate a random int from 1 and 512
-    const buffer = window.libsignal.crypto.getRandomBytes(1);
-    const paddingLength = (new Uint8Array(buffer)[0] & 0x1ff) + 1;
-
-    // Generate a random padding buffer of the chosen size
-    syncMessage.padding = window.libsignal.crypto.getRandomBytes(paddingLength);
+    syncMessage.padding = this.getRandomPadding();
 
     return syncMessage;
   }
@@ -1299,8 +1293,8 @@ export default class MessageSender {
       for (let i = 0; i < reads.length; i += 1) {
         const read = new window.textsecure.protobuf.SyncMessage.Read();
         read.timestamp = reads[i].timestamp;
-        read.sender = reads[i].senderE164;
-        read.senderUuid = reads[i].senderUuid;
+        read.sender = reads[i].senderE164 || null;
+        read.senderUuid = reads[i].senderUuid || null;
 
         syncMessage.read.push(read);
       }
@@ -1437,6 +1431,47 @@ export default class MessageSender {
     );
   }
 
+  getRandomPadding(): ArrayBuffer {
+    // Generate a random int from 1 and 512
+    const buffer = window.libsignal.crypto.getRandomBytes(2);
+    const paddingLength = (new Uint16Array(buffer)[0] & 0x1ff) + 1;
+
+    // Generate a random padding buffer of the chosen size
+    return window.libsignal.crypto.getRandomBytes(paddingLength);
+  }
+
+  async sendNullMessage(
+    {
+      uuid,
+      e164,
+      padding,
+    }: { uuid?: string; e164?: string; padding?: ArrayBuffer },
+    options?: SendOptionsType
+  ): Promise<CallbackResultType> {
+    const nullMessage = new window.textsecure.protobuf.NullMessage();
+
+    const identifier = uuid || e164;
+    if (!identifier) {
+      throw new Error('sendNullMessage: Got neither uuid nor e164!');
+    }
+
+    nullMessage.padding = padding || this.getRandomPadding();
+
+    const contentMessage = new window.textsecure.protobuf.Content();
+    contentMessage.nullMessage = nullMessage;
+
+    // We want the NullMessage to look like a normal outgoing message; not silent
+    const silent = false;
+    const timestamp = Date.now();
+    return this.sendIndividualProto(
+      identifier,
+      contentMessage,
+      timestamp,
+      silent,
+      options
+    );
+  }
+
   async syncVerification(
     destinationE164: string,
     destinationUuid: string,
@@ -1453,26 +1488,12 @@ export default class MessageSender {
       return Promise.resolve();
     }
 
+    // Get padding which we can share between null message and verified sync
+    const padding = this.getRandomPadding();
+
     // First send a null message to mask the sync message.
-    const nullMessage = new window.textsecure.protobuf.NullMessage();
-
-    // Generate a random int from 1 and 512
-    const buffer = window.libsignal.crypto.getRandomBytes(1);
-    const paddingLength = (new Uint8Array(buffer)[0] & 0x1ff) + 1;
-
-    // Generate a random padding buffer of the chosen size
-    nullMessage.padding = window.libsignal.crypto.getRandomBytes(paddingLength);
-
-    const contentMessage = new window.textsecure.protobuf.Content();
-    contentMessage.nullMessage = nullMessage;
-
-    // We want the NullMessage to look like a normal outgoing message; not silent
-    const silent = false;
-    const promise = this.sendIndividualProto(
-      destinationUuid || destinationE164,
-      contentMessage,
-      now,
-      silent,
+    const promise = this.sendNullMessage(
+      { uuid: destinationUuid, e164: destinationE164, padding },
       options
     );
 
@@ -1486,7 +1507,7 @@ export default class MessageSender {
         verified.destinationUuid = destinationUuid;
       }
       verified.identityKey = identityKey;
-      verified.nullMessage = nullMessage.padding;
+      verified.nullMessage = padding;
 
       const syncMessage = this.createSyncMessage();
       syncMessage.verified = verified;

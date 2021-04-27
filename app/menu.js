@@ -10,6 +10,7 @@ exports.createTemplate = (options, messages) => {
 
   const {
     isBeta,
+    devTools,
     includeSetup,
     openContactUs,
     openForums,
@@ -119,13 +120,17 @@ exports.createTemplate = (options, messages) => {
           label: messages.debugLog.message,
           click: showDebugLog,
         },
-        {
-          type: 'separator',
-        },
-        {
-          role: 'toggledevtools',
-          label: messages.viewMenuToggleDevTools.message,
-        },
+        ...(devTools
+          ? [
+              {
+                type: 'separator',
+              },
+              {
+                role: 'toggledevtools',
+                label: messages.viewMenuToggleDevTools.message,
+              },
+            ]
+          : []),
       ],
     },
     {
