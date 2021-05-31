@@ -981,6 +981,7 @@ function showCaptchaWindow() {
       nodeIntegrationInWorker: false,
       contextIsolation: false,
       nativeWindowOpen: true,
+      partition: 'captcha',
     },
   };
 
