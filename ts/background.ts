@@ -5,12 +5,18 @@ import { DataMessageClass } from './textsecure.d';
 import { MessageAttributesType } from './model-types.d';
 import { WhatIsThis } from './window.d';
 import { getTitleBarVisibility, TitleBarVisibility } from './types/Settings';
+import { ChallengeHandler } from './challenge';
 import { isWindowDragElement } from './util/isWindowDragElement';
 import { assert } from './util/assert';
-import * as refreshSenderCertificate from './refreshSenderCertificate';
-import { SenderCertificateMode } from './metadata/SecretSessionCipher';
+import { senderCertificateService } from './services/senderCertificate';
 import { routineProfileRefresh } from './routineProfileRefresh';
 import { isMoreRecentThan, isOlderThan } from './util/timestamp';
+import { isValidReactionEmoji } from './reactions/isValidReactionEmoji';
+import { ConversationModel } from './models/conversations';
+import { getMessageById } from './models/messages';
+import { createBatcher } from './util/batcher';
+import { ourProfileKeyService } from './services/ourProfileKey';
+import { shouldRespondWithProfileKey } from './util/shouldRespondWithProfileKey';
 
 const MAX_ATTACHMENT_DOWNLOAD_AGE = 3600 * 72 * 1000;
 
@@ -27,10 +33,34 @@ export async function startApp(): Promise<void> {
       err && err.stack ? err.stack : err
     );
   }
+
+  ourProfileKeyService.initialize(window.storage);
+
+  let resolveOnAppView: (() => void) | undefined;
+  const onAppView = new Promise<void>(resolve => {
+    resolveOnAppView = resolve;
+  });
+
+  window.textsecure.protobuf.onLoad(() => {
+    window.storage.onready(() => {
+      senderCertificateService.initialize({
+        WebAPI: window.WebAPI,
+        navigator,
+        onlineEventTarget: window,
+        SenderCertificate: window.textsecure.protobuf.SenderCertificate,
+        storage: window.storage,
+      });
+    });
+  });
+
   const eventHandlerQueue = new window.PQueue({
     concurrency: 1,
     timeout: 1000 * 60 * 2,
   });
+
+  const profileKeyResponseQueue = new window.PQueue();
+  profileKeyResponseQueue.pause();
+
   window.Whisper.deliveryReceiptQueue = new window.PQueue({
     concurrency: 1,
     timeout: 1000 * 60 * 2,
@@ -67,7 +97,7 @@ export async function startApp(): Promise<void> {
             const {
               wrap,
               sendOptions,
-            } = window.ConversationController.prepareForSend(c.get('id'));
+            } = await window.ConversationController.prepareForSend(c.get('id'));
             // eslint-disable-next-line no-await-in-loop
             await wrap(
               window.textsecure.messaging.sendDeliveryReceipt(
@@ -352,7 +382,7 @@ export async function startApp(): Promise<void> {
         onChangeTheme();
       },
       getHideMenuBar: () => window.storage.get('hide-menu-bar'),
-      setHideMenuBar: (value: WhatIsThis) => {
+      setHideMenuBar: (value: boolean) => {
         window.storage.put('hide-menu-bar', value);
         window.setAutoHideMenuBar(value);
         window.setMenuBarVisibility(!value);
@@ -360,36 +390,36 @@ export async function startApp(): Promise<void> {
 
       getNotificationSetting: () =>
         window.storage.get('notification-setting', 'message'),
-      setNotificationSetting: (value: WhatIsThis) =>
+      setNotificationSetting: (value: 'message' | 'name' | 'count' | 'off') =>
         window.storage.put('notification-setting', value),
       getNotificationDrawAttention: () =>
         window.storage.get('notification-draw-attention', true),
-      setNotificationDrawAttention: (value: WhatIsThis) =>
+      setNotificationDrawAttention: (value: boolean) =>
         window.storage.put('notification-draw-attention', value),
       getAudioNotification: () => window.storage.get('audio-notification'),
-      setAudioNotification: (value: WhatIsThis) =>
+      setAudioNotification: (value: boolean) =>
         window.storage.put('audio-notification', value),
       getCountMutedConversations: () =>
         window.storage.get('badge-count-muted-conversations', false),
-      setCountMutedConversations: (value: WhatIsThis) => {
+      setCountMutedConversations: (value: boolean) => {
         window.storage.put('badge-count-muted-conversations', value);
         window.Whisper.events.trigger('updateUnreadCount');
       },
       getCallRingtoneNotification: () =>
         window.storage.get('call-ringtone-notification', true),
-      setCallRingtoneNotification: (value: WhatIsThis) =>
+      setCallRingtoneNotification: (value: boolean) =>
         window.storage.put('call-ringtone-notification', value),
       getCallSystemNotification: () =>
         window.storage.get('call-system-notification', true),
-      setCallSystemNotification: (value: WhatIsThis) =>
+      setCallSystemNotification: (value: boolean) =>
         window.storage.put('call-system-notification', value),
       getIncomingCallNotification: () =>
         window.storage.get('incoming-call-notification', true),
-      setIncomingCallNotification: (value: WhatIsThis) =>
+      setIncomingCallNotification: (value: boolean) =>
         window.storage.put('incoming-call-notification', value),
 
       getSpellCheck: () => window.storage.get('spell-check', true),
-      setSpellCheck: (value: WhatIsThis) => {
+      setSpellCheck: (value: boolean) => {
         window.storage.put('spell-check', value);
       },
 
@@ -408,19 +438,22 @@ export async function startApp(): Promise<void> {
         window.storage.put('linkPreviews', value),
 
       getAlwaysRelayCalls: () => window.storage.get('always-relay-calls'),
-      setAlwaysRelayCalls: (value: WhatIsThis) =>
+      setAlwaysRelayCalls: (value: boolean) =>
         window.storage.put('always-relay-calls', value),
 
       // eslint-disable-next-line eqeqeq
       isPrimary: () => window.textsecure.storage.user.getDeviceId() == '1',
       getSyncRequest: () =>
-        new Promise((resolve, reject) => {
-          const syncRequest = window.getSyncRequest();
-          syncRequest.addEventListener('success', resolve);
-          syncRequest.addEventListener('timeout', reject);
+        new Promise<void>((resolve, reject) => {
+          const FIVE_MINUTES = 5 * 60 * 60 * 1000;
+          const syncRequest = window.getSyncRequest(FIVE_MINUTES);
+          syncRequest.addEventListener('success', () => resolve());
+          syncRequest.addEventListener('timeout', () =>
+            reject(new Error('timeout'))
+          );
         }),
       getLastSyncTime: () => window.storage.get('synced_at'),
-      setLastSyncTime: (value: WhatIsThis) =>
+      setLastSyncTime: (value: number) =>
         window.storage.put('synced_at', value),
 
       addDarkOverlay: () => {
@@ -822,6 +855,10 @@ export async function startApp(): Promise<void> {
       window.Signal.State.Ducks.items.actions,
       store.dispatch
     );
+    actions.linkPreviews = window.Signal.State.bindActionCreators(
+      window.Signal.State.Ducks.linkPreviews.actions,
+      store.dispatch
+    );
     actions.network = window.Signal.State.bindActionCreators(
       window.Signal.State.Ducks.network.actions,
       store.dispatch
@@ -862,19 +899,35 @@ export async function startApp(): Promise<void> {
       }
       conversationAdded(conversation.id, conversation.format());
     });
-    convoCollection.on('change', conversation => {
-      if (!conversation) {
-        return;
-      }
+
+    const changedConvoBatcher = createBatcher<ConversationModel>({
+      name: 'changedConvoBatcher',
+      processBatch(batch) {
+        const deduped = Array.from(new Set(batch));
+        window.log.info(
+          'changedConvoBatcher: deduped ' +
+            `${batch.length} into ${deduped.length}`
+        );
+
+        deduped.forEach(conversation => {
+          conversationChanged(conversation.id, conversation.format());
+        });
+      },
 
       // This delay ensures that the .format() call isn't synchronous as a
       //   Backbone property is changed. Important because our _byUuid/_byE164
       //   lookups aren't up-to-date as the change happens; just a little bit
       //   after.
-      setTimeout(
-        () => conversationChanged(conversation.id, conversation.format()),
-        1
-      );
+      wait: 1,
+      maxSize: Infinity,
+    });
+
+    convoCollection.on('change', conversation => {
+      if (!conversation) {
+        return;
+      }
+
+      changedConvoBatcher.add(conversation);
     });
     convoCollection.on('reset', removeAllConversations);
 
@@ -1406,7 +1459,62 @@ export async function startApp(): Promise<void> {
     window.textsecure.messaging.sendRequestKeySyncMessage();
   }
 
+  let challengeHandler: ChallengeHandler | undefined;
+
   async function start() {
+    challengeHandler = new ChallengeHandler({
+      storage: window.storage,
+
+      getMessageById,
+
+      requestChallenge(request) {
+        window.sendChallengeRequest(request);
+      },
+
+      async sendChallengeResponse(data) {
+        await window.textsecure.messaging.sendChallengeResponse(data);
+      },
+
+      onChallengeFailed() {
+        // TODO: DESKTOP-1530
+        // Display humanized `retryAfter`
+        window.Whisper.ToastView.show(
+          window.Whisper.CaptchaFailedToast,
+          document.getElementsByClassName('conversation-stack')[0] ||
+            document.body
+        );
+      },
+
+      onChallengeSolved() {
+        window.Whisper.ToastView.show(
+          window.Whisper.CaptchaSolvedToast,
+          document.getElementsByClassName('conversation-stack')[0] ||
+            document.body
+        );
+      },
+
+      setChallengeStatus(challengeStatus) {
+        window.reduxActions.network.setChallengeStatus(challengeStatus);
+      },
+    });
+    window.Whisper.events.on('challengeResponse', response => {
+      if (!challengeHandler) {
+        throw new Error('Expected challenge handler to be there');
+      }
+
+      challengeHandler.onResponse(response);
+    });
+
+    window.storage.onready(async () => {
+      if (!challengeHandler) {
+        throw new Error('Expected challenge handler to be there');
+      }
+
+      await challengeHandler.load();
+    });
+
+    window.Signal.challengeHandler = challengeHandler;
+
     window.dispatchEvent(new Event('storage_ready'));
 
     window.log.info('Cleanup: starting...');
@@ -1599,13 +1707,22 @@ export async function startApp(): Promise<void> {
         await window.textsecure.messaging.sendRequestKeySyncMessage();
       }
     );
+
+    if (resolveOnAppView) {
+      resolveOnAppView();
+      resolveOnAppView = undefined;
+    }
   }
 
-  window.getSyncRequest = () =>
-    new window.textsecure.SyncRequest(
+  window.getSyncRequest = (timeoutMillis?: number) => {
+    const syncRequest = new window.textsecure.SyncRequest(
       window.textsecure.messaging,
-      messageReceiver
+      messageReceiver,
+      timeoutMillis
     );
+    syncRequest.start();
+    return syncRequest;
+  };
 
   let disconnectTimer: WhatIsThis | null = null;
   let reconnectTimer: WhatIsThis | null = null;
@@ -1619,6 +1736,10 @@ export async function startApp(): Promise<void> {
     //   we get an online event. This waits a bit after getting an 'offline' event
     //   before disconnecting the socket manually.
     disconnectTimer = setTimeout(disconnect, 1000);
+
+    if (challengeHandler) {
+      challengeHandler.onOffline();
+    }
   }
 
   function onOnline() {
@@ -1776,8 +1897,10 @@ export async function startApp(): Promise<void> {
 
       connectCount += 1;
 
-      window.Whisper.deliveryReceiptQueue.pause(); // avoid flood of delivery receipts until we catch up
-      window.Whisper.Notifications.disable(); // avoid notification flood until empty
+      // To avoid a flood of operations before we catch up, we pause some queues.
+      profileKeyResponseQueue.pause();
+      window.Whisper.deliveryReceiptQueue.pause();
+      window.Whisper.Notifications.disable();
 
       // initialize the socket and start listening for messages
       window.log.info('Initializing socket and listening for messages');
@@ -1818,7 +1941,9 @@ export async function startApp(): Promise<void> {
       addQueuedEventListener('message', onMessageReceived);
       addQueuedEventListener('delivery', onDeliveryReceipt);
       addQueuedEventListener('contact', onContactReceived);
+      addQueuedEventListener('contactsync', onContactSyncComplete);
       addQueuedEventListener('group', onGroupReceived);
+      addQueuedEventListener('groupsync', onGroupSyncComplete);
       addQueuedEventListener('sent', onSentMessage);
       addQueuedEventListener('readSync', onReadSync);
       addQueuedEventListener('read', onReadReceipt);
@@ -1963,10 +2088,7 @@ export async function startApp(): Promise<void> {
           );
           onChangeTheme();
         }
-        const syncRequest = new window.textsecure.SyncRequest(
-          window.textsecure.messaging,
-          messageReceiver
-        );
+        const syncRequest = window.getSyncRequest();
         window.Whisper.events.trigger('contactsync:begin');
         syncRequest.addEventListener('success', () => {
           window.log.info('sync successful');
@@ -1984,7 +2106,7 @@ export async function startApp(): Promise<void> {
         const {
           wrap,
           sendOptions,
-        } = window.ConversationController.prepareForSend(ourId, {
+        } = await window.ConversationController.prepareForSend(ourId, {
           syncMessage: true,
         });
 
@@ -2029,6 +2151,13 @@ export async function startApp(): Promise<void> {
           );
         }
       });
+
+      if (!challengeHandler) {
+        throw new Error('Expected challenge handler to be initialized');
+      }
+
+      // Intentionally not awaiting
+      challengeHandler.onOnline();
     } finally {
       connecting = false;
     }
@@ -2105,20 +2234,11 @@ export async function startApp(): Promise<void> {
       newVersion
     );
 
-    [SenderCertificateMode.WithE164, SenderCertificateMode.WithoutE164].forEach(
-      mode => {
-        refreshSenderCertificate.initialize({
-          events: window.Whisper.events,
-          storage: window.storage,
-          mode,
-          navigator,
-        });
-      }
-    );
-
+    profileKeyResponseQueue.start();
     window.Whisper.deliveryReceiptQueue.start();
     window.Whisper.Notifications.enable();
 
+    await onAppView;
     const view = window.owsDesktopApp.appView;
     if (!view) {
       throw new Error('Expected `appView` to be initialized');
@@ -2127,7 +2247,9 @@ export async function startApp(): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     view.onEmpty();
 
-    window.logAppLoadedEvent();
+    window.logAppLoadedEvent({
+      processedCount: messageReceiver && messageReceiver.getProcessedCount(),
+    });
     if (messageReceiver) {
       window.log.info(
         'App loaded - messages:',
@@ -2184,6 +2306,7 @@ export async function startApp(): Promise<void> {
     //   scenarios where we're coming back from sleep, we can get offline/online events
     //   very fast, and it looks like a network blip. But we need to suppress
     //   notifications in these scenarios too. So we listen for 'reconnect' events.
+    profileKeyResponseQueue.pause();
     window.Whisper.deliveryReceiptQueue.pause();
     window.Whisper.Notifications.disable();
   }
@@ -2350,6 +2473,11 @@ export async function startApp(): Promise<void> {
     });
   }
 
+  async function onContactSyncComplete() {
+    window.log.info('onContactSyncComplete');
+    await window.storage.put('synced_at', Date.now());
+  }
+
   async function onContactReceived(ev: WhatIsThis) {
     const details = ev.contactDetails;
 
@@ -2362,7 +2490,7 @@ export async function startApp(): Promise<void> {
       // special case for syncing details about ourselves
       if (details.profileKey) {
         window.log.info('Got sync message with our own profile key');
-        window.storage.put('profileKey', details.profileKey);
+        ourProfileKeyService.set(details.profileKey);
       }
     }
 
@@ -2388,13 +2516,6 @@ export async function startApp(): Promise<void> {
       });
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const conversation = window.ConversationController.get(detailsId)!;
-      let activeAt = conversation.get('active_at');
-
-      // The idea is to make any new contact show up in the left pane. If
-      //   activeAt is null, then this contact has been purposefully hidden.
-      if (activeAt !== null) {
-        activeAt = activeAt || Date.now();
-      }
 
       if (details.profileKey) {
         const profileKey = window.Signal.Crypto.arrayBufferToBase64(
@@ -2414,7 +2535,6 @@ export async function startApp(): Promise<void> {
       conversation.set({
         name: details.name,
         color: details.color,
-        active_at: activeAt,
         inbox_position: details.inboxPosition,
       });
 
@@ -2470,8 +2590,7 @@ export async function startApp(): Promise<void> {
         await onVerified(verifiedEvent);
       }
 
-      const { appView } = window.owsDesktopApp;
-      if (appView && appView.installView && appView.installView.didLink) {
+      if (window.Signal.Util.postLinkExperience.isActive()) {
         window.log.info(
           'onContactReceived: Adding the message history disclaimer on link'
         );
@@ -2480,6 +2599,11 @@ export async function startApp(): Promise<void> {
     } catch (error) {
       window.log.error('onContactReceived error:', Errors.toLogFormat(error));
     }
+  }
+
+  async function onGroupSyncComplete() {
+    window.log.info('onGroupSyncComplete');
+    await window.storage.put('synced_at', Date.now());
   }
 
   // Note: this handler is only for v1 groups received via 'group sync' messages
@@ -2523,13 +2647,6 @@ export async function startApp(): Promise<void> {
     } as WhatIsThis;
 
     if (details.active) {
-      const activeAt = conversation.get('active_at');
-
-      // The idea is to make any new group show up in the left pane. If
-      //   activeAt is null, then this group has been purposefully hidden.
-      if (activeAt !== null) {
-        updates.active_at = activeAt || Date.now();
-      }
       updates.left = false;
     } else {
       updates.left = true;
@@ -2560,8 +2677,7 @@ export async function startApp(): Promise<void> {
 
     window.Signal.Data.updateConversation(conversation.attributes);
 
-    const { appView } = window.owsDesktopApp;
-    if (appView && appView.installView && appView.installView.didLink) {
+    if (window.Signal.Util.postLinkExperience.isActive()) {
       window.log.info(
         'onGroupReceived: Adding the message history disclaimer on link'
       );
@@ -2601,6 +2717,30 @@ export async function startApp(): Promise<void> {
     return confirm();
   }
 
+  const respondWithProfileKeyBatcher = createBatcher<ConversationModel>({
+    name: 'respondWithProfileKeyBatcher',
+    processBatch(batch) {
+      const deduped = new Set(batch);
+      deduped.forEach(async sender => {
+        try {
+          if (!(await shouldRespondWithProfileKey(sender))) {
+            return;
+          }
+        } catch (error) {
+          window.log.error(
+            'respondWithProfileKeyBatcher error',
+            error && error.stack
+          );
+        }
+
+        sender.queueJob(() => sender.sendProfileKeyUpdate());
+      });
+    },
+
+    wait: 200,
+    maxSize: Infinity,
+  });
+
   // Note: We do very little in this function, since everything in handleDataMessage is
   //   inside a conversation-specific queue(). Any code here might run before an earlier
   //   message is processed in handleDataMessage().
@@ -2627,6 +2767,18 @@ export async function startApp(): Promise<void> {
 
     const message = initIncomingMessage(data, messageDescriptor);
 
+    if (message.isIncoming() && message.get('unidentifiedDeliveryReceived')) {
+      const sender = message.getContact();
+
+      if (!sender) {
+        throw new Error('MessageModel has no sender.');
+      }
+
+      profileKeyResponseQueue.add(() => {
+        respondWithProfileKeyBatcher.add(sender);
+      });
+    }
+
     if (data.message.reaction) {
       window.normalizeUuids(
         data.message.reaction,
@@ -2635,6 +2787,13 @@ export async function startApp(): Promise<void> {
       );
 
       const { reaction } = data.message;
+
+      if (!isValidReactionEmoji(reaction.emoji)) {
+        window.log.warn('Received an invalid reaction emoji. Dropping it');
+        confirm();
+        return Promise.resolve();
+      }
+
       window.log.info(
         'Queuing incoming reaction for',
         reaction.targetTimestamp
@@ -2824,9 +2983,6 @@ export async function startApp(): Promise<void> {
 
       // Finally create the V2 group normally
       const conversationId = window.ConversationController.ensureGroup(id, {
-        // Note: We don't set active_at, because we don't want the group to show until
-        //   we have information about it beyond these initial details.
-        //   see maybeUpdateGroup().
         groupVersion: 2,
         masterKey: message.groupV2.masterKey,
         secretParams: message.groupV2.secretParams,
@@ -2928,6 +3084,13 @@ export async function startApp(): Promise<void> {
       );
 
       const { reaction } = data.message;
+
+      if (!isValidReactionEmoji(reaction.emoji)) {
+        window.log.warn('Received an invalid reaction emoji. Dropping it');
+        event.confirm();
+        return Promise.resolve();
+      }
+
       window.log.info('Queuing sent reaction for', reaction.targetTimestamp);
       const reactionModel = window.Whisper.Reactions.add({
         emoji: reaction.emoji,
@@ -3105,6 +3268,10 @@ export async function startApp(): Promise<void> {
         reconnectTimer = setTimeout(connect, 60000);
 
         window.Whisper.events.trigger('reconnectTimer');
+
+        // If we couldn't connect during startup - we should still switch SQL to
+        // the main process to avoid stalling UI.
+        window.sqlInitializer.goBackToMainProcess();
       }
       return;
     }

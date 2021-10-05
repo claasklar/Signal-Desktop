@@ -23,6 +23,10 @@ import {
   StorageType,
 } from './libsignal.d';
 import { ContactRecordIdentityState, TextSecureType } from './textsecure.d';
+import {
+  ChallengeHandler,
+  IPCRequest as IPCChallengeRequest,
+} from './challenge';
 import { WebAPIConnectType } from './textsecure/WebAPI';
 import { uploadDebugLogs } from './logging/debuglogs';
 import { CallingClass } from './services/calling';
@@ -46,6 +50,7 @@ import { createCompositionArea } from './state/roots/createCompositionArea';
 import { createContactModal } from './state/roots/createContactModal';
 import { createConversationDetails } from './state/roots/createConversationDetails';
 import { createConversationHeader } from './state/roots/createConversationHeader';
+import { createForwardMessageModal } from './state/roots/createForwardMessageModal';
 import { createGroupLinkManagement } from './state/roots/createGroupLinkManagement';
 import { createGroupV1MigrationModal } from './state/roots/createGroupV1MigrationModal';
 import { createGroupV2JoinModal } from './state/roots/createGroupV2JoinModal';
@@ -63,6 +68,7 @@ import * as conversationsDuck from './state/ducks/conversations';
 import * as emojisDuck from './state/ducks/emojis';
 import * as expirationDuck from './state/ducks/expiration';
 import * as itemsDuck from './state/ducks/items';
+import * as linkPreviewsDuck from './state/ducks/linkPreviews';
 import * as networkDuck from './state/ducks/network';
 import * as updatesDuck from './state/ducks/updates';
 import * as userDuck from './state/ducks/user';
@@ -70,8 +76,8 @@ import * as searchDuck from './state/ducks/search';
 import * as stickersDuck from './state/ducks/stickers';
 import * as conversationsSelectors from './state/selectors/conversations';
 import * as searchSelectors from './state/selectors/search';
-import { SendOptionsType } from './textsecure/SendMessage';
 import AccountManager from './textsecure/AccountManager';
+import { SendOptionsType } from './textsecure/SendMessage';
 import Data from './sql/Client';
 import { UserMessage } from './types/Message';
 import { PhoneNumberFormat } from 'google-libphonenumber';
@@ -81,7 +87,7 @@ import { combineNames } from './util';
 import { BatcherType } from './util/batcher';
 import { AttachmentList } from './components/conversation/AttachmentList';
 import { CaptionEditor } from './components/CaptionEditor';
-import { ConfirmationModal } from './components/ConfirmationModal';
+import { ConfirmationDialog } from './components/ConfirmationDialog';
 import { ContactDetail } from './components/conversation/ContactDetail';
 import { ContactModal } from './components/conversation/ContactModal';
 import { ErrorModal } from './components/ErrorModal';
@@ -97,6 +103,7 @@ import { ElectronLocaleType } from './util/mapToSupportLocale';
 import { SignalProtocolStore } from './LibSignalStore';
 import { StartupQueue } from './util/StartupQueue';
 import * as synchronousCrypto from './util/synchronousCrypto';
+import SyncRequest from './textsecure/SyncRequest';
 
 export { Long } from 'long';
 
@@ -170,7 +177,7 @@ declare global {
     getServerPublicParams: () => string;
     getSfuUrl: () => string;
     getSocketStatus: () => number;
-    getSyncRequest: () => WhatIsThis;
+    getSyncRequest: (timeoutMillis?: number) => SyncRequest;
     getTitle: () => string;
     waitForEmptyEventQueue: () => Promise<void>;
     getVersion: () => string;
@@ -219,6 +226,7 @@ declare global {
     showWindow: () => void;
     showSettings: () => void;
     shutdown: () => void;
+    sendChallengeRequest: (request: IPCChallengeRequest) => void;
     setAutoHideMenuBar: (value: WhatIsThis) => void;
     setBadgeCount: (count: number) => void;
     setMenuBarVisibility: (value: WhatIsThis) => void;
@@ -460,7 +468,7 @@ declare global {
       Components: {
         AttachmentList: typeof AttachmentList;
         CaptionEditor: typeof CaptionEditor;
-        ConfirmationModal: typeof ConfirmationModal;
+        ConfirmationDialog: typeof ConfirmationDialog;
         ContactDetail: typeof ContactDetail;
         ContactModal: typeof ContactModal;
         ErrorModal: typeof ErrorModal;
@@ -491,6 +499,7 @@ declare global {
           createContactModal: typeof createContactModal;
           createConversationDetails: typeof createConversationDetails;
           createConversationHeader: typeof createConversationHeader;
+          createForwardMessageModal: typeof createForwardMessageModal;
           createGroupLinkManagement: typeof createGroupLinkManagement;
           createGroupV1MigrationModal: typeof createGroupV1MigrationModal;
           createGroupV2JoinModal: typeof createGroupV2JoinModal;
@@ -510,6 +519,7 @@ declare global {
           emojis: typeof emojisDuck;
           expiration: typeof expirationDuck;
           items: typeof itemsDuck;
+          linkPreviews: typeof linkPreviewsDuck;
           network: typeof networkDuck;
           updates: typeof updatesDuck;
           user: typeof userDuck;
@@ -527,6 +537,7 @@ declare global {
         getInitialState: () => WhatIsThis;
         load: () => void;
       };
+      challengeHandler: ChallengeHandler;
     };
 
     ConversationController: ConversationController;
@@ -545,7 +556,8 @@ declare global {
     hasSignalAccount: (number: string) => boolean;
     getServerTrustRoot: () => WhatIsThis;
     readyForUpdates: () => void;
-    logAppLoadedEvent: () => void;
+    logAppLoadedEvent: (options: { processedCount?: number }) => void;
+    logMessageReceiverConnect: () => void;
 
     // Runtime Flags
     isShowingModal?: boolean;
@@ -562,7 +574,7 @@ declare global {
   // We want to extend `Error`, so we need an interface.
   // eslint-disable-next-line no-restricted-syntax
   interface Error {
-    cause?: Event;
+    originalError?: Event;
   }
 }
 
@@ -573,15 +585,18 @@ export type DCodeIOType = {
     Long: DCodeIOType['Long'];
   };
   Long: Long & {
+    MAX_VALUE: Long;
     equals: (other: Long | number | string) => boolean;
     fromBits: (low: number, high: number, unsigned: boolean) => number;
     fromNumber: (value: number, unsigned?: boolean) => Long;
     fromString: (str: string | null) => Long;
     isLong: (obj: unknown) => obj is Long;
   };
+  ProtoBuf: WhatIsThis;
 };
 
 type MessageControllerType = {
+  getById: (id: string) => MessageModel | undefined;
   findBySender: (sender: string) => MessageModel | null;
   findBySentAt: (sentAt: number) => MessageModel | null;
   register: (id: string, model: MessageModel) => MessageModel;
@@ -707,6 +722,7 @@ export type WhisperType = {
   BodyRangeType: BodyRangeType;
 
   Notifications: {
+    isEnabled: boolean;
     removeBy: (filter: Partial<unknown>) => void;
     add: (notification: unknown) => void;
     clear: () => void;
@@ -769,6 +785,8 @@ export type WhisperType = {
   BlockedGroupToast: typeof window.Whisper.ToastView;
   BlockedToast: typeof window.Whisper.ToastView;
   CannotMixImageAndNonImageAttachmentsToast: typeof window.Whisper.ToastView;
+  CaptchaSolvedToast: typeof window.Whisper.ToastView;
+  CaptchaFailedToast: typeof window.Whisper.ToastView;
   DangerousFileTypeToast: typeof window.Whisper.ToastView;
   ExpiredToast: typeof window.Whisper.ToastView;
   FileSavedToast: typeof window.Whisper.ToastView;
@@ -783,6 +801,7 @@ export type WhisperType = {
   OriginalNotFoundToast: typeof window.Whisper.ToastView;
   PinnedConversationsFullToast: typeof window.Whisper.ToastView;
   ReactionFailedToast: typeof window.Whisper.ToastView;
+  DeleteForEveryoneFailedToast: typeof window.Whisper.ToastView;
   TapToViewExpiredIncomingToast: typeof window.Whisper.ToastView;
   TapToViewExpiredOutgoingToast: typeof window.Whisper.ToastView;
   TimerConflictToast: typeof window.Whisper.ToastView;

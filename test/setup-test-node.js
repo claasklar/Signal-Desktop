@@ -4,11 +4,10 @@
 /* eslint-disable no-console */
 
 const ByteBuffer = require('../components/bytebuffer/dist/ByteBufferAB.js');
+const Long = require('../components/long/dist/Long.js');
 const { setEnvironment, Environment } = require('../ts/environment');
 
-before(() => {
-  setEnvironment(Environment.Test);
-});
+setEnvironment(Environment.Test);
 
 // To replicate logic we have on the client side
 global.window = {
@@ -20,6 +19,7 @@ global.window = {
   i18n: key => `i18n(${key})`,
   dcodeIO: {
     ByteBuffer,
+    Long,
   },
 };
 

@@ -11,21 +11,19 @@ import {
   ConversationAttributesType,
   VerificationOptions,
 } from '../model-types.d';
-import {
-  GroupV2PendingMembership,
-  GroupV2RequestingMembership,
-} from '../components/conversation/conversation-details/PendingInvites';
-import { GroupV2Membership } from '../components/conversation/conversation-details/ConversationDetailsMembershipList';
 import { CallMode, CallHistoryDetailsType } from '../types/Calling';
-import { CallbackResultType, GroupV2InfoType } from '../textsecure/SendMessage';
 import {
-  ConversationType,
-  ConversationTypeType,
-} from '../state/ducks/conversations';
+  CallbackResultType,
+  GroupV2InfoType,
+  SendMetadataType,
+  SendOptionsType,
+} from '../textsecure/SendMessage';
+import { ConversationType } from '../state/ducks/conversations';
 import { ColorType } from '../types/Colors';
 import { MessageModel } from './messages';
 import { isMuted } from '../util/isMuted';
 import { isConversationUnregistered } from '../util/isConversationUnregistered';
+import { assert } from '../util/assert';
 import { missingCaseError } from '../util/missingCaseError';
 import { sniffImageMimeType } from '../util/sniffImageMimeType';
 import { MIMEType, IMAGE_WEBP } from '../types/MIME';
@@ -44,6 +42,16 @@ import { BodyRangesType } from '../types/Util';
 import { getTextWithMentions } from '../util';
 import { migrateColor } from '../util/migrateColor';
 import { isNotNil } from '../util/isNotNil';
+import {
+  PhoneNumberSharingMode,
+  parsePhoneNumberSharingMode,
+} from '../util/phoneNumberSharingMode';
+import {
+  SenderCertificateMode,
+  SerializedCertificateType,
+} from '../metadata/SecretSessionCipher';
+import { senderCertificateService } from '../services/senderCertificate';
+import { ourProfileKeyService } from '../services/ourProfileKey';
 
 /* eslint-disable more/no-then */
 window.Whisper = window.Whisper || {};
@@ -1079,7 +1087,7 @@ export class ConversationModel extends window.Backbone.Model<
     return undefined;
   }
 
-  sendTypingMessage(isTyping: boolean): void {
+  async sendTypingMessage(isTyping: boolean): Promise<void> {
     if (!window.textsecure.messaging) {
       return;
     }
@@ -1098,7 +1106,7 @@ export class ConversationModel extends window.Backbone.Model<
       return;
     }
 
-    const sendOptions = this.getSendOptions();
+    const sendOptions = await this.getSendOptions();
     this.wrapSend(
       window.textsecure.messaging.sendTypingMessage(
         {
@@ -1330,7 +1338,8 @@ export class ConversationModel extends window.Backbone.Model<
       areWeAdmin: this.areWeAdmin(),
       canChangeTimer: this.canChangeTimer(),
       canEditGroupInfo: this.canEditGroupInfo(),
-      avatarPath: this.getAvatarPath()!,
+      avatarPath: this.getAbsoluteAvatarPath(),
+      unblurredAvatarPath: this.getAbsoluteUnblurredAvatarPath(),
       color,
       discoveredUnregisteredAt: this.get('discoveredUnregisteredAt'),
       draftBodyRanges,
@@ -1377,13 +1386,23 @@ export class ConversationModel extends window.Backbone.Model<
       profileSharing: this.get('profileSharing'),
       publicParams: this.get('publicParams'),
       secretParams: this.get('secretParams'),
-      sharedGroupNames: this.get('sharedGroupNames')!,
       shouldShowDraft,
       sortedGroupMembers,
       timestamp,
       title: this.getTitle()!,
-      type: (this.isPrivate() ? 'direct' : 'group') as ConversationTypeType,
+      searchableTitle: this.isMe()
+        ? window.i18n('noteToSelf')
+        : this.getTitle(),
       unreadCount: this.get('unreadCount')! || 0,
+      ...(this.isPrivate()
+        ? {
+            type: 'direct' as const,
+            sharedGroupNames: this.get('sharedGroupNames') || [],
+          }
+        : {
+            type: 'group' as const,
+            sharedGroupNames: [],
+          }),
     };
 
     if (typingContact) {
@@ -1901,7 +1920,10 @@ export class ConversationModel extends window.Backbone.Model<
     await this.applyMessageRequestResponse(response);
 
     const { ourNumber, ourUuid } = this;
-    const { wrap, sendOptions } = window.ConversationController.prepareForSend(
+    const {
+      wrap,
+      sendOptions,
+    } = await window.ConversationController.prepareForSend(
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       ourNumber || ourUuid!,
       {
@@ -2094,12 +2116,12 @@ export class ConversationModel extends window.Backbone.Model<
     // Because syncVerification sends a (null) message to the target of the verify and
     //   a sync message to our own devices, we need to send the accessKeys down for both
     //   contacts. So we merge their sendOptions.
-    const { sendOptions } = window.ConversationController.prepareForSend(
+    const { sendOptions } = await window.ConversationController.prepareForSend(
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       this.ourNumber || this.ourUuid!,
       { syncMessage: true }
     );
-    const contactSendOptions = this.getSendOptions();
+    const contactSendOptions = await this.getSendOptions();
     const options = { ...sendOptions, ...contactSendOptions };
 
     const promise = window.textsecure.storage.protocol.loadIdentityKey(e164);
@@ -2217,7 +2239,7 @@ export class ConversationModel extends window.Backbone.Model<
     });
   }
 
-  getUntrusted(): Backbone.Collection {
+  getUntrusted(): Backbone.Collection<ConversationModel> {
     if (this.isPrivate()) {
       if (this.isUntrusted()) {
         return new window.Backbone.Collection([this]);
@@ -2225,16 +2247,14 @@ export class ConversationModel extends window.Backbone.Model<
       return new window.Backbone.Collection();
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const results = this.contactCollection!.map(contact => {
-      if (contact.isMe()) {
-        return [false, contact];
-      }
-      return [contact.isUntrusted(), contact];
-    });
-
     return new window.Backbone.Collection(
-      results.filter(result => result[0]).map(result => result[1])
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      this.contactCollection!.filter(contact => {
+        if (contact.isMe()) {
+          return false;
+        }
+        return contact.isUntrusted();
+      })
     );
   }
 
@@ -2563,7 +2583,7 @@ export class ConversationModel extends window.Backbone.Model<
       sent_at: now,
       received_at: window.Signal.Util.incrementMessageCounter(),
       received_at_ms: now,
-      unread: true,
+      unread: 1,
       changedId: conversationId || this.id,
       profileChange,
       // TODO: DESKTOP-722
@@ -2714,32 +2734,20 @@ export class ConversationModel extends window.Backbone.Model<
     return member.role === MEMBER_ROLES.ADMINISTRATOR;
   }
 
-  getMemberships(): Array<GroupV2Membership> {
+  private getMemberships(): Array<{
+    conversationId: string;
+    isAdmin: boolean;
+  }> {
     if (!this.isGroupV2()) {
       return [];
     }
 
     const members = this.get('membersV2') || [];
-    return members
-      .map(member => {
-        const conversationModel = window.ConversationController.get(
-          member.conversationId
-        );
-        if (!conversationModel || conversationModel.isUnregistered()) {
-          return null;
-        }
-
-        return {
-          isAdmin:
-            member.role ===
-            window.textsecure.protobuf.Member.Role.ADMINISTRATOR,
-          metadata: member,
-          member: conversationModel.format(),
-        };
-      })
-      .filter(
-        (membership): membership is GroupV2Membership => membership !== null
-      );
+    return members.map(member => ({
+      isAdmin:
+        member.role === window.textsecure.protobuf.Member.Role.ADMINISTRATOR,
+      conversationId: member.conversationId,
+    }));
   }
 
   getGroupLink(): string | undefined {
@@ -2754,56 +2762,30 @@ export class ConversationModel extends window.Backbone.Model<
     return window.Signal.Groups.buildGroupLink(this);
   }
 
-  getPendingMemberships(): Array<GroupV2PendingMembership> {
+  private getPendingMemberships(): Array<{
+    addedByUserId?: string;
+    conversationId: string;
+  }> {
     if (!this.isGroupV2()) {
       return [];
     }
 
     const members = this.get('pendingMembersV2') || [];
-    return members
-      .map(member => {
-        const conversationModel = window.ConversationController.get(
-          member.conversationId
-        );
-        if (!conversationModel || conversationModel.isUnregistered()) {
-          return null;
-        }
-
-        return {
-          metadata: member,
-          member: conversationModel.format(),
-        };
-      })
-      .filter(
-        (membership): membership is GroupV2PendingMembership =>
-          membership !== null
-      );
+    return members.map(member => ({
+      addedByUserId: member.addedByUserId,
+      conversationId: member.conversationId,
+    }));
   }
 
-  getPendingApprovalMemberships(): Array<GroupV2RequestingMembership> {
+  private getPendingApprovalMemberships(): Array<{ conversationId: string }> {
     if (!this.isGroupV2()) {
       return [];
     }
 
     const members = this.get('pendingAdminApprovalV2') || [];
-    return members
-      .map(member => {
-        const conversationModel = window.ConversationController.get(
-          member.conversationId
-        );
-        if (!conversationModel || conversationModel.isUnregistered()) {
-          return null;
-        }
-
-        return {
-          metadata: member,
-          member: conversationModel.format(),
-        };
-      })
-      .filter(
-        (membership): membership is GroupV2RequestingMembership =>
-          membership !== null
-      );
+    return members.map(member => ({
+      conversationId: member.conversationId,
+    }));
   }
 
   getMembers(
@@ -3052,16 +3034,9 @@ export class ConversationModel extends window.Backbone.Model<
       fromId: window.ConversationController.getOurConversationId(),
     });
 
-    window.Whisper.Deletes.onDelete(deleteModel);
-
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const destination = this.getSendTarget()!;
     const recipients = this.getRecipients();
-
-    let profileKey: ArrayBuffer | undefined;
-    if (this.get('profileSharing')) {
-      profileKey = window.storage.get('profileKey');
-    }
 
     return this.queueJob(async () => {
       window.log.info(
@@ -3096,9 +3071,14 @@ export class ConversationModel extends window.Backbone.Model<
         throw new Error('Cannot send DOE while offline!');
       }
 
-      const options = this.getSendOptions();
+      const options = await this.getSendOptions();
 
-      const promise = (() => {
+      const promise = (async () => {
+        let profileKey: ArrayBuffer | undefined;
+        if (this.get('profileSharing')) {
+          profileKey = await ourProfileKeyService.get();
+        }
+
         if (this.isPrivate()) {
           return window.textsecure.messaging.sendMessageToIdentifier(
             destination,
@@ -3132,7 +3112,16 @@ export class ConversationModel extends window.Backbone.Model<
       //   anything to the database.
       message.doNotSave = true;
 
-      return message.send(this.wrapSend(promise));
+      const result = await message.send(this.wrapSend(promise));
+
+      if (!message.hasSuccessfulDelivery()) {
+        // This is handled by `conversation_view` which displays a toast on
+        // send error.
+        throw new Error('No successful delivery for delete for everyone');
+      }
+      window.Whisper.Deletes.onDelete(deleteModel);
+
+      return result;
     }).catch(error => {
       window.log.error(
         'Error sending deleteForEveryone',
@@ -3162,16 +3151,10 @@ export class ConversationModel extends window.Backbone.Model<
       timestamp,
       fromSync: true,
     });
-    window.Whisper.Reactions.onReaction(reactionModel);
 
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const destination = this.getSendTarget()!;
     const recipients = this.getRecipients();
-
-    let profileKey: ArrayBuffer | undefined;
-    if (this.get('profileSharing')) {
-      profileKey = window.storage.get('profileKey');
-    }
 
     return this.queueJob(async () => {
       window.log.info(
@@ -3210,6 +3193,11 @@ export class ConversationModel extends window.Backbone.Model<
         throw new Error('Cannot send reaction while offline!');
       }
 
+      let profileKey: ArrayBuffer | undefined;
+      if (this.get('profileSharing')) {
+        profileKey = await ourProfileKeyService.get();
+      }
+
       // Special-case the self-send case - we send only a sync message
       if (this.isMe()) {
         const dataMessage = await window.textsecure.messaging.getMessageProto(
@@ -3225,10 +3213,12 @@ export class ConversationModel extends window.Backbone.Model<
           expireTimer,
           profileKey
         );
-        return message.sendSyncMessageOnly(dataMessage);
+        const result = await message.sendSyncMessageOnly(dataMessage);
+        window.Whisper.Reactions.onReaction(reactionModel);
+        return result;
       }
 
-      const options = this.getSendOptions();
+      const options = await this.getSendOptions();
 
       const promise = (() => {
         if (this.isPrivate()) {
@@ -3263,15 +3253,17 @@ export class ConversationModel extends window.Backbone.Model<
         );
       })();
 
-      return message.send(this.wrapSend(promise));
-    }).catch(error => {
-      window.log.error('Error sending reaction', reaction, target, error);
+      const result = await message.send(this.wrapSend(promise));
 
-      const reverseReaction = reactionModel.clone();
-      reverseReaction.set('remove', !reverseReaction.get('remove'));
-      window.Whisper.Reactions.onReaction(reverseReaction);
+      if (!message.hasSuccessfulDelivery()) {
+        // This is handled by `conversation_view` which displays a toast on
+        // send error.
+        throw new Error('No successful delivery for reaction');
+      }
 
-      throw error;
+      window.Whisper.Reactions.onReaction(reactionModel);
+
+      return result;
     });
   }
 
@@ -3287,11 +3279,17 @@ export class ConversationModel extends window.Backbone.Model<
       return;
     }
     window.log.info('Sending profileKeyUpdate to conversation', id, recipients);
-    const profileKey = window.storage.get('profileKey');
+    const profileKey = await ourProfileKeyService.get();
+    if (!profileKey) {
+      window.log.error(
+        'Attempted to send profileKeyUpdate but our profile key was not found'
+      );
+      return;
+    }
     await window.textsecure.messaging.sendProfileKeyUpdate(
       profileKey,
       recipients,
-      this.getSendOptions(),
+      await this.getSendOptions(),
       this.get('groupId')
     );
   }
@@ -3302,22 +3300,29 @@ export class ConversationModel extends window.Backbone.Model<
     quote: WhatIsThis,
     preview: WhatIsThis,
     sticker?: WhatIsThis,
-    mentions?: BodyRangesType
+    mentions?: BodyRangesType,
+    { dontClearDraft = false } = {}
   ): void {
+    if (this.isGroupV1AndDisabled()) {
+      return;
+    }
+
     this.clearTypingTimers();
 
     const { clearUnreadMetrics } = window.reduxActions.conversations;
     clearUnreadMetrics(this.id);
 
+    const mandatoryProfileSharingEnabled = window.Signal.RemoteConfig.isEnabled(
+      'desktop.mandatoryProfileSharing'
+    );
+    if (mandatoryProfileSharingEnabled && !this.get('profileSharing')) {
+      this.set({ profileSharing: true });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const destination = this.getSendTarget()!;
     const expireTimer = this.get('expireTimer');
     const recipients = this.getRecipients();
-
-    let profileKey: ArrayBuffer | undefined;
-    if (this.get('profileSharing')) {
-      profileKey = window.storage.get('profileKey');
-    }
 
     this.queueJob(async () => {
       const now = Date.now();
@@ -3364,15 +3369,22 @@ export class ConversationModel extends window.Backbone.Model<
         Message: window.Whisper.Message,
       });
 
+      const draftProperties = dontClearDraft
+        ? {}
+        : {
+            draft: null,
+            draftTimestamp: null,
+            lastMessage: model.getNotificationText(),
+            lastMessageStatus: 'sending' as const,
+          };
+
       this.set({
-        lastMessage: model.getNotificationText(),
-        lastMessageStatus: 'sending',
+        ...draftProperties,
         active_at: now,
         timestamp: now,
         isArchived: false,
-        draft: null,
-        draftTimestamp: null,
       });
+
       this.incrementSentMessageCount();
       window.Signal.Data.updateConversation(this.attributes);
 
@@ -3405,6 +3417,11 @@ export class ConversationModel extends window.Backbone.Model<
         now,
       });
 
+      let profileKey: ArrayBuffer | undefined;
+      if (this.get('profileSharing')) {
+        profileKey = await ourProfileKeyService.get();
+      }
+
       // Special-case the self-send case - we send only a sync message
       if (this.isMe()) {
         const dataMessage = await window.textsecure.messaging.getMessageProto(
@@ -3424,7 +3441,7 @@ export class ConversationModel extends window.Backbone.Model<
       }
 
       const conversationType = this.get('type');
-      const options = this.getSendOptions();
+      const options = await this.getSendOptions();
 
       let promise;
       if (conversationType === Message.GROUP) {
@@ -3544,19 +3561,17 @@ export class ConversationModel extends window.Backbone.Model<
     );
   }
 
-  getSendOptions(options = {}): WhatIsThis {
-    const senderCertificate = window.storage.get('senderCertificate');
-    const sendMetadata = this.getSendMetadata(options);
+  async getSendOptions(options = {}): Promise<SendOptionsType> {
+    const sendMetadata = await this.getSendMetadata(options);
 
     return {
-      senderCertificate,
       sendMetadata,
     };
   }
 
-  getSendMetadata(
+  async getSendMetadata(
     options: { syncMessage?: string; disableMeCheck?: boolean } = {}
-  ): WhatIsThis | null {
+  ): Promise<SendMetadataType | undefined> {
     const { syncMessage, disableMeCheck } = options;
 
     // START: this code has an Expiration date of ~2018/11/21
@@ -3566,16 +3581,24 @@ export class ConversationModel extends window.Backbone.Model<
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const me = window.ConversationController.get(myId)!;
     if (!disableMeCheck && me.get('sealedSender') === SEALED_SENDER.DISABLED) {
-      return null;
+      return undefined;
     }
     // END
 
     if (!this.isPrivate()) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const infoArray = this.contactCollection!.map(conversation =>
-        conversation.getSendMetadata(options)
+      assert(
+        this.contactCollection,
+        'getSendMetadata: expected contactCollection to be defined'
       );
-      return Object.assign({}, ...infoArray);
+      const result: SendMetadataType = {};
+      await Promise.all(
+        this.contactCollection.map(async conversation => {
+          const sendMetadata =
+            (await conversation.getSendMetadata(options)) || {};
+          Object.assign(result, sendMetadata);
+        })
+      );
+      return result;
     }
 
     const accessKey = this.get('accessKey');
@@ -3583,16 +3606,19 @@ export class ConversationModel extends window.Backbone.Model<
 
     // We never send sync messages as sealed sender
     if (syncMessage && this.isMe()) {
-      return null;
+      return undefined;
     }
 
     const e164 = this.get('e164');
     const uuid = this.get('uuid');
 
+    const senderCertificate = await this.getSenderCertificateForDirectConversation();
+
     // If we've never fetched user's profile, we default to what we have
     if (sealedSender === SEALED_SENDER.UNKNOWN) {
       const info = {
         accessKey: accessKey || arrayBufferToBase64(getRandomBytes(16)),
+        senderCertificate,
       };
       return {
         ...(e164 ? { [e164]: info } : {}),
@@ -3601,7 +3627,7 @@ export class ConversationModel extends window.Backbone.Model<
     }
 
     if (sealedSender === SEALED_SENDER.DISABLED) {
-      return null;
+      return undefined;
     }
 
     const info = {
@@ -3609,12 +3635,48 @@ export class ConversationModel extends window.Backbone.Model<
         accessKey && sealedSender === SEALED_SENDER.ENABLED
           ? accessKey
           : arrayBufferToBase64(getRandomBytes(16)),
+      senderCertificate,
     };
 
     return {
       ...(e164 ? { [e164]: info } : {}),
       ...(uuid ? { [uuid]: info } : {}),
     };
+  }
+
+  private getSenderCertificateForDirectConversation(): Promise<
+    undefined | SerializedCertificateType
+  > {
+    if (!this.isPrivate()) {
+      throw new Error(
+        'getSenderCertificateForDirectConversation should only be called for direct conversations'
+      );
+    }
+
+    const phoneNumberSharingMode = parsePhoneNumberSharingMode(
+      window.storage.get('phoneNumberSharingMode')
+    );
+
+    let certificateMode: SenderCertificateMode;
+    switch (phoneNumberSharingMode) {
+      case PhoneNumberSharingMode.Everybody:
+        certificateMode = SenderCertificateMode.WithE164;
+        break;
+      case PhoneNumberSharingMode.ContactsOnly: {
+        const isInSystemContacts = Boolean(this.get('name'));
+        certificateMode = isInSystemContacts
+          ? SenderCertificateMode.WithE164
+          : SenderCertificateMode.WithoutE164;
+        break;
+      }
+      case PhoneNumberSharingMode.Nobody:
+        certificateMode = SenderCertificateMode.WithoutE164;
+        break;
+      default:
+        throw missingCaseError(phoneNumberSharingMode);
+    }
+
+    return senderCertificateService.get(certificateMode);
   }
 
   // Is this someone who is a contact, or are we sharing our profile with them?
@@ -3996,11 +4058,13 @@ export class ConversationModel extends window.Backbone.Model<
       return message;
     }
 
+    const sendOptions = await this.getSendOptions();
+
     let profileKey;
     if (this.get('profileSharing')) {
-      profileKey = window.storage.get('profileKey');
+      profileKey = await ourProfileKeyService.get();
     }
-    const sendOptions = this.getSendOptions();
+
     let promise;
 
     if (this.isMe()) {
@@ -4119,25 +4183,17 @@ export class ConversationModel extends window.Backbone.Model<
       const message = window.MessageController.register(model.id, model);
       this.addSingleMessage(message);
 
-      const options = this.getSendOptions();
-      message.send(
-        this.wrapSend(
-          // TODO: DESKTOP-724
-          // resetSession returns `Array<void>` which is incompatible with the
-          // expected promise return values. `[]` is truthy and wrapSend assumes
-          // it's a valid callback result type
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          window.textsecure.messaging.resetSession(
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            this.get('uuid')!,
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            this.get('e164')!,
-            now,
-            options
-          )
-        )
-      );
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const uuid = this.get('uuid')!;
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const e164 = this.get('e164')!;
+
+      message.sendUtilityMessageWithRetry({
+        type: 'session-reset',
+        uuid,
+        e164,
+        now,
+      });
     }
   }
 
@@ -4172,7 +4228,7 @@ export class ConversationModel extends window.Backbone.Model<
       const message = window.MessageController.register(model.id, model);
       this.addSingleMessage(message);
 
-      const options = this.getSendOptions();
+      const options = await this.getSendOptions();
       message.send(
         this.wrapSend(
           window.textsecure.messaging.leaveGroup(
@@ -4244,7 +4300,7 @@ export class ConversationModel extends window.Backbone.Model<
       //   to a contact, we need accessKeys for both.
       const {
         sendOptions,
-      } = window.ConversationController.prepareForSend(
+      } = await window.ConversationController.prepareForSend(
         window.ConversationController.getOurConversationId(),
         { syncMessage: true }
       );
@@ -4259,7 +4315,7 @@ export class ConversationModel extends window.Backbone.Model<
     // Only send read receipts for accepted conversations
     if (window.storage.get('read-receipt-setting') && this.getAccepted()) {
       window.log.info(`Sending ${items.length} read receipts`);
-      const convoSendOptions = this.getSendOptions();
+      const convoSendOptions = await this.getSendOptions();
       const receiptsBySender = window._.groupBy(items, 'senderId');
 
       await Promise.all(
@@ -4397,7 +4453,8 @@ export class ConversationModel extends window.Backbone.Model<
         ));
       }
 
-      const sendMetadata = c.getSendMetadata({ disableMeCheck: true }) || {};
+      const sendMetadata =
+        (await c.getSendMetadata({ disableMeCheck: true })) || {};
       const getInfo =
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         sendMetadata[c.get('uuid')!] || sendMetadata[c.get('e164')!] || {};
@@ -4853,16 +4910,32 @@ export class ConversationModel extends window.Backbone.Model<
     return migrateColor(this.get('color'));
   }
 
-  getAvatarPath(): string | undefined {
+  private getAvatarPath(): undefined | string {
     const avatar = this.isMe()
       ? this.get('profileAvatar') || this.get('avatar')
       : this.get('avatar') || this.get('profileAvatar');
+    return avatar?.path || undefined;
+  }
 
-    if (!avatar || !avatar.path) {
-      return undefined;
+  getAbsoluteAvatarPath(): string | undefined {
+    const avatarPath = this.getAvatarPath();
+    return avatarPath ? getAbsoluteAttachmentPath(avatarPath) : undefined;
+  }
+
+  getAbsoluteUnblurredAvatarPath(): string | undefined {
+    const unblurredAvatarPath = this.get('unblurredAvatarPath');
+    return unblurredAvatarPath
+      ? getAbsoluteAttachmentPath(unblurredAvatarPath)
+      : undefined;
+  }
+
+  unblurAvatar(): void {
+    const avatarPath = this.getAvatarPath();
+    if (avatarPath) {
+      this.set('unblurredAvatarPath', avatarPath);
+    } else {
+      this.unset('unblurredAvatarPath');
     }
-
-    return getAbsoluteAttachmentPath(avatar.path);
   }
 
   private canChangeTimer(): boolean {
@@ -4957,6 +5030,42 @@ export class ConversationModel extends window.Backbone.Model<
     });
   }
 
+  setMuteExpiration(
+    muteExpiresAt = 0,
+    { viaStorageServiceSync = false } = {}
+  ): void {
+    const prevExpiration = this.get('muteExpiresAt');
+
+    if (prevExpiration === muteExpiresAt) {
+      return;
+    }
+
+    // we use a timeoutId here so that we can reference the mute that was
+    // potentially set in the ConversationController. Specifically for a
+    // scenario where a conversation is already muted and we boot up the app,
+    // a timeout will be already set. But if we change the mute to a later
+    // date a new timeout would need to be set and the old one cleared. With
+    // this ID we can reference the existing timeout.
+    const timeoutId = this.getMuteTimeoutId();
+    window.Signal.Services.removeTimeout(timeoutId);
+
+    if (muteExpiresAt && muteExpiresAt < Number.MAX_SAFE_INTEGER) {
+      window.Signal.Services.onTimeout(
+        muteExpiresAt,
+        () => {
+          this.setMuteExpiration(0);
+        },
+        timeoutId
+      );
+    }
+
+    this.set({ muteExpiresAt });
+    if (!viaStorageServiceSync) {
+      this.captureChange('mutedUntilTimestamp');
+    }
+    window.Signal.Data.updateConversation(this.attributes);
+  }
+
   isMuted(): boolean {
     return isMuted(this.get('muteExpiresAt'));
   }
@@ -4966,6 +5075,12 @@ export class ConversationModel extends window.Backbone.Model<
   }
 
   async notify(message: WhatIsThis, reaction?: WhatIsThis): Promise<void> {
+    // As a performance optimization don't perform any work if notifications are
+    // disabled.
+    if (!window.Whisper.Notifications.isEnabled) {
+      return;
+    }
+
     if (this.isMuted()) {
       return;
     }

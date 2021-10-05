@@ -8,6 +8,7 @@ import { drop, groupBy, orderBy, take } from 'lodash';
 import { ContextMenu, ContextMenuTrigger, MenuItem } from 'react-contextmenu';
 import { Manager, Popper, Reference } from 'react-popper';
 
+import { ConversationType } from '../../state/ducks/conversations';
 import { Avatar } from '../Avatar';
 import { Spinner } from '../Spinner';
 import { MessageBody } from './MessageBody';
@@ -63,6 +64,7 @@ const THREE_HOURS = 3 * 60 * 60 * 1000;
 export const MessageStatuses = [
   'delivered',
   'error',
+  'paused',
   'partial-sent',
   'read',
   'sending',
@@ -105,12 +107,20 @@ export type PropsData = {
   timestamp: number;
   status?: MessageStatusType;
   contact?: ContactType;
-  authorId: string;
-  authorTitle: string;
-  authorName?: string;
-  authorProfileName?: string;
-  authorPhoneNumber?: string;
-  authorColor?: ColorType;
+  author: Pick<
+    ConversationType,
+    | 'acceptedMessageRequest'
+    | 'avatarPath'
+    | 'color'
+    | 'id'
+    | 'isMe'
+    | 'name'
+    | 'phoneNumber'
+    | 'profileName'
+    | 'sharedGroupNames'
+    | 'title'
+    | 'unblurredAvatarPath'
+  >;
   conversationType: ConversationTypesType;
   attachments?: Array<AttachmentType>;
   quote?: {
@@ -128,7 +138,6 @@ export type PropsData = {
     referencedMessageNotFound: boolean;
   };
   previews: Array<LinkPreviewType>;
-  authorAvatarPath?: string;
   isExpired?: boolean;
 
   isTapToView?: boolean;
@@ -170,6 +179,7 @@ export type PropsActions = {
   ) => void;
   replyToMessage: (id: string) => void;
   retrySend: (id: string) => void;
+  showForwardMessageModal: (id: string) => void;
   deleteMessage: (id: string) => void;
   deleteMessageForEveryone: (id: string) => void;
   showMessageDetail: (id: string) => void;
@@ -511,8 +521,31 @@ export class Message extends React.PureComponent<Props, State> {
     const isError = status === 'error' && direction === 'outgoing';
     const isPartiallySent =
       status === 'partial-sent' && direction === 'outgoing';
+    const isPaused = status === 'paused';
 
-    if (isError || isPartiallySent) {
+    if (isError || isPartiallySent || isPaused) {
+      let statusInfo: React.ReactChild;
+      if (isError) {
+        statusInfo = i18n('sendFailed');
+      } else if (isPaused) {
+        statusInfo = i18n('sendPaused');
+      } else {
+        statusInfo = (
+          <button
+            type="button"
+            className="module-message__metadata__tapable"
+            onClick={(event: React.MouseEvent) => {
+              event.stopPropagation();
+              event.preventDefault();
+
+              showMessageDetail(id);
+            }}
+          >
+            {i18n('partiallySent')}
+          </button>
+        );
+      }
+
       return (
         <span
           className={classNames({
@@ -522,22 +555,7 @@ export class Message extends React.PureComponent<Props, State> {
             'module-message__metadata__date--with-image-no-caption': withImageNoCaption,
           })}
         >
-          {isError ? (
-            i18n('sendFailed')
-          ) : (
-            <button
-              type="button"
-              className="module-message__metadata__tapable"
-              onClick={(event: React.MouseEvent) => {
-                event.stopPropagation();
-                event.preventDefault();
-
-                showMessageDetail(id);
-              }}
-            >
-              {i18n('partiallySent')}
-            </button>
-          )}
+          {statusInfo}
         </span>
       );
     }
@@ -634,10 +652,7 @@ export class Message extends React.PureComponent<Props, State> {
 
   public renderAuthor(): JSX.Element | null {
     const {
-      authorTitle,
-      authorName,
-      authorPhoneNumber,
-      authorProfileName,
+      author,
       collapseMetadata,
       conversationType,
       direction,
@@ -654,7 +669,7 @@ export class Message extends React.PureComponent<Props, State> {
     if (
       direction !== 'incoming' ||
       conversationType !== 'group' ||
-      !authorTitle
+      !author.title
     ) {
       return null;
     }
@@ -670,10 +685,10 @@ export class Message extends React.PureComponent<Props, State> {
     return (
       <div className={moduleName}>
         <ContactName
-          title={authorTitle}
-          phoneNumber={authorPhoneNumber}
-          name={authorName}
-          profileName={authorProfileName}
+          title={author.title}
+          phoneNumber={author.phoneNumber}
+          name={author.name}
+          profileName={author.profileName}
           module={moduleName}
           i18n={i18n}
         />
@@ -997,8 +1012,8 @@ export class Message extends React.PureComponent<Props, State> {
 
   public renderQuote(): JSX.Element | null {
     const {
+      author,
       conversationType,
-      authorColor,
       direction,
       disableScroll,
       i18n,
@@ -1013,7 +1028,7 @@ export class Message extends React.PureComponent<Props, State> {
     const withContentAbove =
       conversationType === 'group' && direction === 'incoming';
     const quoteColor =
-      direction === 'incoming' ? authorColor : quote.authorColor;
+      direction === 'incoming' ? author.color : quote.authorColor;
     const { referencedMessageNotFound } = quote;
 
     const clickHandler = disableScroll
@@ -1105,14 +1120,8 @@ export class Message extends React.PureComponent<Props, State> {
 
   public renderAvatar(): JSX.Element | undefined {
     const {
-      authorAvatarPath,
-      authorId,
-      authorName,
-      authorPhoneNumber,
-      authorProfileName,
-      authorTitle,
+      author,
       collapseMetadata,
-      authorColor,
       conversationType,
       direction,
       i18n,
@@ -1136,19 +1145,23 @@ export class Message extends React.PureComponent<Props, State> {
         <button
           type="button"
           className="module-message__author-avatar"
-          onClick={() => showContactModal(authorId)}
+          onClick={() => showContactModal(author.id)}
           tabIndex={0}
         >
           <Avatar
-            avatarPath={authorAvatarPath}
-            color={authorColor}
+            acceptedMessageRequest={author.acceptedMessageRequest}
+            avatarPath={author.avatarPath}
+            color={author.color}
             conversationType="direct"
             i18n={i18n}
-            name={authorName}
-            phoneNumber={authorPhoneNumber}
-            profileName={authorProfileName}
-            title={authorTitle}
+            isMe={author.isMe}
+            name={author.name}
+            phoneNumber={author.phoneNumber}
+            profileName={author.profileName}
+            sharedGroupNames={author.sharedGroupNames}
             size={28}
+            title={author.title}
+            unblurredAvatarPath={author.unblurredAvatarPath}
           />
         </button>
       </div>
@@ -1205,7 +1218,15 @@ export class Message extends React.PureComponent<Props, State> {
   public renderError(isCorrectSide: boolean): JSX.Element | null {
     const { status, direction } = this.props;
 
-    if (!isCorrectSide || (status !== 'error' && status !== 'partial-sent')) {
+    if (!isCorrectSide) {
+      return null;
+    }
+
+    if (
+      status !== 'paused' &&
+      status !== 'error' &&
+      status !== 'partial-sent'
+    ) {
       return null;
     }
 
@@ -1214,7 +1235,8 @@ export class Message extends React.PureComponent<Props, State> {
         <div
           className={classNames(
             'module-message__error',
-            `module-message__error--${direction}`
+            `module-message__error--${direction}`,
+            `module-message__error--${status}`
           )}
         />
       </div>
@@ -1401,6 +1423,7 @@ export class Message extends React.PureComponent<Props, State> {
       canReply,
       deleteMessage,
       deleteMessageForEveryone,
+      deletedForEveryone,
       direction,
       i18n,
       id,
@@ -1408,14 +1431,19 @@ export class Message extends React.PureComponent<Props, State> {
       isTapToView,
       replyToMessage,
       retrySend,
+      showForwardMessageModal,
       showMessageDetail,
       status,
     } = this.props;
 
+    const canForward = !isTapToView && !deletedForEveryone;
+
     const { canDeleteForEveryone } = this.state;
 
     const showRetry =
-      (status === 'error' || status === 'partial-sent') &&
+      (status === 'paused' ||
+        status === 'error' ||
+        status === 'partial-sent') &&
       direction === 'outgoing';
     const multipleAttachments = attachments && attachments.length > 1;
 
@@ -1497,6 +1525,22 @@ export class Message extends React.PureComponent<Props, State> {
             }}
           >
             {i18n('retrySend')}
+          </MenuItem>
+        ) : null}
+        {canForward ? (
+          <MenuItem
+            attributes={{
+              className:
+                'module-message__context--icon module-message__context__forward-message',
+            }}
+            onClick={(event: React.MouseEvent) => {
+              event.stopPropagation();
+              event.preventDefault();
+
+              showForwardMessageModal(id);
+            }}
+          >
+            {i18n('forwardMessage')}
           </MenuItem>
         ) : null}
         <MenuItem
@@ -2172,7 +2216,7 @@ export class Message extends React.PureComponent<Props, State> {
 
   public renderContainer(): JSX.Element {
     const {
-      authorColor,
+      author,
       deletedForEveryone,
       direction,
       isSticker,
@@ -2197,13 +2241,13 @@ export class Message extends React.PureComponent<Props, State> {
         ? 'module-message__container--with-tap-to-view-expired'
         : null,
       !isSticker && direction === 'incoming'
-        ? `module-message__container--incoming-${authorColor}`
+        ? `module-message__container--incoming-${author.color}`
         : null,
       isTapToView && isAttachmentPending && !isTapToViewExpired
         ? 'module-message__container--with-tap-to-view-pending'
         : null,
       isTapToView && isAttachmentPending && !isTapToViewExpired
-        ? `module-message__container--${direction}-${authorColor}-tap-to-view-pending`
+        ? `module-message__container--${direction}-${author.color}-tap-to-view-pending`
         : null,
       isTapToViewError
         ? 'module-message__container--with-tap-to-view-error'
@@ -2230,7 +2274,7 @@ export class Message extends React.PureComponent<Props, State> {
 
   public render(): JSX.Element | null {
     const {
-      authorId,
+      author,
       attachments,
       direction,
       id,
@@ -2241,7 +2285,7 @@ export class Message extends React.PureComponent<Props, State> {
 
     // This id is what connects our triple-dot click with our associated pop-up menu.
     //   It needs to be unique.
-    const triggerId = String(id || `${authorId}-${timestamp}`);
+    const triggerId = String(id || `${author.id}-${timestamp}`);
 
     if (expired) {
       return null;

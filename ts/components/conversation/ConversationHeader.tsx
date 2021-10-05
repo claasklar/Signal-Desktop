@@ -17,12 +17,9 @@ import { Avatar, AvatarSize } from '../Avatar';
 import { InContactsIcon } from '../InContactsIcon';
 
 import { LocalizerType } from '../../types/Util';
-import { ColorType } from '../../types/Colors';
+import { ConversationType } from '../../state/ducks/conversations';
 import { MuteOption, getMuteOptions } from '../../util/getMuteOptions';
-import {
-  ExpirationTimerOptions,
-  TimerOption,
-} from '../../util/ExpirationTimerOptions';
+import * as expirationTimer from '../../util/expirationTimer';
 import { isMuted } from '../../util/isMuted';
 import { missingCaseError } from '../../util/missingCaseError';
 import { NameInput } from './NameInput';
@@ -36,33 +33,33 @@ export enum OutgoingCallButtonStyle {
 
 export type PropsDataType = {
   conversationTitle?: string;
-  id: string;
-  name?: string;
-
-  phoneNumber?: string;
-  profileName?: string;
-  color?: ColorType;
-  avatarPath?: string;
-  type: 'direct' | 'group';
-  title: string;
-
-  acceptedMessageRequest?: boolean;
-  isVerified?: boolean;
-  isMe?: boolean;
-  isArchived?: boolean;
-  isPinned?: boolean;
   isMissingMandatoryProfileSharing?: boolean;
-  left?: boolean;
-  markedUnread?: boolean;
-  groupVersion?: number;
-
-  canChangeTimer?: boolean;
-  expireTimer?: number;
-  muteExpiresAt?: number;
-
-  showBackButton?: boolean;
   outgoingCallButtonStyle: OutgoingCallButtonStyle;
-};
+  showBackButton?: boolean;
+} & Pick<
+  ConversationType,
+  | 'acceptedMessageRequest'
+  | 'avatarPath'
+  | 'canChangeTimer'
+  | 'color'
+  | 'expireTimer'
+  | 'groupVersion'
+  | 'id'
+  | 'isArchived'
+  | 'isMe'
+  | 'isPinned'
+  | 'isVerified'
+  | 'left'
+  | 'markedUnread'
+  | 'muteExpiresAt'
+  | 'name'
+  | 'phoneNumber'
+  | 'profileName'
+  | 'sharedGroupNames'
+  | 'title'
+  | 'type'
+  | 'unblurredAvatarPath'
+>;
 
 export type PropsActionsType = {
   onSetMuteNotifications: (seconds: number) => void;
@@ -198,6 +195,7 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
 
   private renderAvatar(): ReactNode {
     const {
+      acceptedMessageRequest,
       avatarPath,
       color,
       i18n,
@@ -206,22 +204,28 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
       name,
       phoneNumber,
       profileName,
+      sharedGroupNames,
       title,
+      unblurredAvatarPath,
     } = this.props;
 
     return (
       <span className="module-ConversationHeader__header__avatar">
         <Avatar
+          acceptedMessageRequest={acceptedMessageRequest}
           avatarPath={avatarPath}
           color={color}
           conversationType={type}
           i18n={i18n}
+          isMe={isMe}
           noteToSelf={isMe}
           title={title}
           name={name}
           phoneNumber={phoneNumber}
           profileName={profileName}
+          sharedGroupNames={sharedGroupNames}
           size={AvatarSize.THIRTY_TWO}
+          unblurredAvatarPath={unblurredAvatarPath}
         />
       </span>
     );
@@ -230,16 +234,13 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
   private renderExpirationLength(): ReactNode {
     const { i18n, expireTimer } = this.props;
 
-    const expirationSettingName = expireTimer
-      ? ExpirationTimerOptions.getAbbreviated(i18n, expireTimer)
-      : undefined;
-    if (!expirationSettingName) {
+    if (!expireTimer) {
       return null;
     }
 
     return (
       <div className="module-ConversationHeader__header__info__subtitle__expiration">
-        {expirationSettingName}
+        {expirationTimer.format(i18n, expireTimer)}
       </div>
     );
   }
@@ -396,14 +397,24 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
     const muteOptions: Array<MuteOption> = [];
     if (isMuted(muteExpiresAt)) {
       const expires = moment(muteExpiresAt);
-      const muteExpirationLabel = moment().isSame(expires, 'day')
-        ? expires.format('hh:mm A')
-        : expires.format('M/D/YY, hh:mm A');
+
+      let muteExpirationLabel: string;
+      if (Number(muteExpiresAt) >= Number.MAX_SAFE_INTEGER) {
+        muteExpirationLabel = i18n('muteExpirationLabelAlways');
+      } else {
+        const muteExpirationUntil = moment().isSame(expires, 'day')
+          ? expires.format('hh:mm A')
+          : expires.format('M/D/YY, hh:mm A');
+
+        muteExpirationLabel = i18n('muteExpirationLabel', [
+          muteExpirationUntil,
+        ]);
+      }
 
       muteOptions.push(
         ...[
           {
-            name: i18n('muteExpirationLabel', [muteExpirationLabel]),
+            name: muteExpirationLabel,
             disabled: true,
             value: 0,
           },
@@ -435,16 +446,18 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
       <ContextMenu id={triggerId}>
         {disableTimerChanges ? null : (
           <SubMenu title={disappearingTitle}>
-            {ExpirationTimerOptions.map((item: typeof TimerOption) => (
-              <MenuItem
-                key={item.get('seconds')}
-                onClick={() => {
-                  onSetDisappearingMessages(item.get('seconds'));
-                }}
-              >
-                {item.getName(i18n)}
-              </MenuItem>
-            ))}
+            {expirationTimer.DEFAULT_DURATIONS_IN_SECONDS.map(
+              (seconds: number) => (
+                <MenuItem
+                  key={seconds}
+                  onClick={() => {
+                    onSetDisappearingMessages(seconds);
+                  }}
+                >
+                  {expirationTimer.format(i18n, seconds)}
+                </MenuItem>
+              )
+            )}
           </SubMenu>
         )}
         <SubMenu title={muteTitle}>

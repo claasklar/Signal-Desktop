@@ -34,6 +34,11 @@ import {
 } from '../util/phoneNumberDiscoverability';
 import { arePinnedConversationsEqual } from '../util/arePinnedConversationsEqual';
 import { ConversationModel } from '../models/conversations';
+import {
+  getSafeLongFromTimestamp,
+  getTimestampFromLong,
+} from '../util/timestampLongUtils';
+import { ourProfileKeyService } from './ourProfileKey';
 
 const { updateConversation } = dataInterface;
 
@@ -131,6 +136,9 @@ export async function toContactRecord(
   contactRecord.whitelisted = Boolean(conversation.get('profileSharing'));
   contactRecord.archived = Boolean(conversation.get('isArchived'));
   contactRecord.markedUnread = Boolean(conversation.get('markedUnread'));
+  contactRecord.mutedUntilTimestamp = getSafeLongFromTimestamp(
+    conversation.get('muteExpiresAt')
+  );
 
   applyUnknownFields(contactRecord, conversation);
 
@@ -278,6 +286,9 @@ export async function toGroupV1Record(
   groupV1Record.whitelisted = Boolean(conversation.get('profileSharing'));
   groupV1Record.archived = Boolean(conversation.get('isArchived'));
   groupV1Record.markedUnread = Boolean(conversation.get('markedUnread'));
+  groupV1Record.mutedUntilTimestamp = getSafeLongFromTimestamp(
+    conversation.get('muteExpiresAt')
+  );
 
   applyUnknownFields(groupV1Record, conversation);
 
@@ -297,6 +308,9 @@ export async function toGroupV2Record(
   groupV2Record.whitelisted = Boolean(conversation.get('profileSharing'));
   groupV2Record.archived = Boolean(conversation.get('isArchived'));
   groupV2Record.markedUnread = Boolean(conversation.get('markedUnread'));
+  groupV2Record.mutedUntilTimestamp = getSafeLongFromTimestamp(
+    conversation.get('muteExpiresAt')
+  );
 
   applyUnknownFields(groupV2Record, conversation);
 
@@ -526,6 +540,13 @@ export async function mergeGroupV1Record(
     storageID,
   });
 
+  conversation.setMuteExpiration(
+    getTimestampFromLong(groupV1Record.mutedUntilTimestamp),
+    {
+      viaStorageServiceSync: true,
+    }
+  );
+
   applyMessageRequestState(groupV1Record, conversation);
 
   let hasPendingChanges: boolean;
@@ -626,6 +647,13 @@ export async function mergeGroupV2Record(
     storageID,
   });
 
+  conversation.setMuteExpiration(
+    getTimestampFromLong(groupV2Record.mutedUntilTimestamp),
+    {
+      viaStorageServiceSync: true,
+    }
+  );
+
   applyMessageRequestState(groupV2Record, conversation);
 
   addUnknownFields(groupV2Record, conversation);
@@ -658,10 +686,13 @@ export async function mergeGroupV2Record(
 
     // We don't await this because this could take a very long time, waiting for queues to
     //   empty, etc.
-    waitThenMaybeUpdateGroup({
-      conversation,
-      dropInitialJoinMessage,
-    });
+    waitThenMaybeUpdateGroup(
+      {
+        conversation,
+        dropInitialJoinMessage,
+      },
+      { viaSync: true }
+    );
   }
 
   return hasPendingChanges;
@@ -734,6 +765,13 @@ export async function mergeContactRecord(
     markedUnread: Boolean(contactRecord.markedUnread),
     storageID,
   });
+
+  conversation.setMuteExpiration(
+    getTimestampFromLong(contactRecord.mutedUntilTimestamp),
+    {
+      viaStorageServiceSync: true,
+    }
+  );
 
   const hasPendingChanges = doesRecordHavePendingChanges(
     await toContactRecord(conversation),
@@ -809,7 +847,7 @@ export async function mergeAccountRecord(
   window.storage.put('phoneNumberDiscoverability', discoverability);
 
   if (profileKey) {
-    window.storage.put('profileKey', profileKey.toArrayBuffer());
+    ourProfileKeyService.set(profileKey.toArrayBuffer());
   }
 
   if (pinnedConversations) {

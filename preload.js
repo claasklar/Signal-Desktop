@@ -5,6 +5,9 @@
 
 /* eslint-disable global-require, no-inner-declarations */
 
+const preloadStartTime = Date.now();
+let preloadEndTime = 0;
+
 try {
   const electron = require('electron');
   const semver = require('semver');
@@ -108,7 +111,20 @@ try {
 
   window.setBadgeCount = count => ipc.send('set-badge-count', count);
 
-  window.logAppLoadedEvent = () => ipc.send('signal-app-loaded');
+  let connectStartTime = 0;
+
+  window.logMessageReceiverConnect = () => {
+    if (connectStartTime === 0) {
+      connectStartTime = Date.now();
+    }
+  };
+
+  window.logAppLoadedEvent = ({ processedCount }) =>
+    ipc.send('signal-app-loaded', {
+      preloadTime: preloadEndTime - preloadStartTime,
+      connectTime: connectStartTime - preloadEndTime,
+      processedCount,
+    });
 
   // We never do these in our code, so we'll prevent it everywhere
   window.open = () => null;
@@ -170,6 +186,12 @@ try {
   ipc.on('manage-devices', () => {
     Whisper.events.trigger('manageDevices');
   });
+
+  ipc.on('challenge:response', (_event, response) => {
+    Whisper.events.trigger('challengeResponse', response);
+  });
+  window.sendChallengeRequest = request =>
+    ipc.send('challenge:request', request);
 
   {
     let isFullScreen = config.isFullScreen === 'true';
@@ -701,36 +723,7 @@ try {
   });
 
   if (config.environment === 'test') {
-    // This is a hack to let us run TypeScript tests in the renderer process. See the
-    //   code in `test/index.html`.
-    const pendingDescribeCalls = [];
-    window.describe = (...args) => {
-      pendingDescribeCalls.push(args);
-    };
-
-    /* eslint-disable global-require, import/no-extraneous-dependencies */
-    const fastGlob = require('fast-glob');
-
-    fastGlob
-      .sync('./ts/test-{both,electron}/**/*_test.js', {
-        absolute: true,
-        cwd: __dirname,
-      })
-      .forEach(require);
-
-    delete window.describe;
-
-    window.test = {
-      pendingDescribeCalls,
-      fastGlob,
-      normalizePath: require('normalize-path'),
-      fse: require('fs-extra'),
-      tmp: require('tmp'),
-      path: require('path'),
-      basePath: __dirname,
-      attachmentsPath: window.Signal.Migrations.attachmentsPath,
-    };
-    /* eslint-enable global-require, import/no-extraneous-dependencies */
+    require('./preload_test.js');
   }
 } catch (error) {
   /* eslint-disable no-console */
@@ -744,4 +737,5 @@ try {
   throw error;
 }
 
+preloadEndTime = Date.now();
 window.log.info('preload complete');

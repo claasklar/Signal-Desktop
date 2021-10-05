@@ -332,6 +332,7 @@ class MessageReceiverInner extends EventTarget {
 
   onopen() {
     window.log.info('websocket open');
+    window.logMessageReceiverConnect();
   }
 
   onerror() {
@@ -610,8 +611,9 @@ class MessageReceiverInner extends EventTarget {
       envelope.source = envelope.source || item.source;
       envelope.sourceUuid = envelope.sourceUuid || item.sourceUuid;
       envelope.sourceDevice = envelope.sourceDevice || item.sourceDevice;
-      envelope.serverTimestamp =
-        envelope.serverTimestamp || item.serverTimestamp;
+      envelope.serverTimestamp = envelope.serverTimestamp
+        ? envelope.serverTimestamp.toNumber()
+        : item.serverTimestamp;
 
       const { decrypted } = item;
       if (decrypted) {
@@ -1255,7 +1257,7 @@ class MessageReceiverInner extends EventTarget {
     await sessionCipher.closeOpenSessionForDevice();
 
     // Send a null message with newly-created session
-    const sendOptions = conversation.getSendOptions();
+    const sendOptions = await conversation.getSendOptions();
     await window.textsecure.messaging.sendNullMessage({ uuid }, sendOptions);
   }
 

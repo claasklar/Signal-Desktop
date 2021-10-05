@@ -13,6 +13,7 @@ import {
   cloneDeep,
   compact,
   fromPairs,
+  toPairs,
   get,
   groupBy,
   isFunction,
@@ -36,6 +37,7 @@ import {
 import {
   AttachmentDownloadJobType,
   ClientInterface,
+  ClientSearchResultMessageType,
   ClientJobType,
   ConversationType,
   IdentityKeyType,
@@ -55,7 +57,6 @@ import {
 import Server from './Server';
 import { MessageModel } from '../models/messages';
 import { ConversationModel } from '../models/conversations';
-import { waitForPendingQueries } from './Queueing';
 
 // We listen to a lot of events on ipcRenderer, often on the same channel. This prevents
 //   any warnings that might be sent to the console in that case.
@@ -66,6 +67,8 @@ if (ipcRenderer && ipcRenderer.setMaxListeners) {
 }
 
 const DATABASE_UPDATE_TIMEOUT = 2 * 60 * 1000; // two minutes
+
+const MIN_TRACE_DURATION = 10;
 
 const SQL_CHANNEL_KEY = 'sql-channel';
 const ERASE_SQL_KEY = 'erase-sql-key';
@@ -89,6 +92,7 @@ let _shuttingDown = false;
 let _shutdownCallback: Function | null = null;
 let _shutdownPromise: Promise<any> | null = null;
 let shouldUseRendererProcess = true;
+const startupQueries = new Map<string, number>();
 
 // Because we can't force this module to conform to an interface, we narrow our exports
 //   to this one default export, which does conform to the interface.
@@ -243,22 +247,36 @@ const dataInterface: ClientInterface = {
 export default dataInterface;
 
 async function goBackToMainProcess(): Promise<void> {
-  window.log.info('data.goBackToMainProcess: waiting for pending queries');
+  if (!shouldUseRendererProcess) {
+    window.log.info(
+      'data.goBackToMainProcess: already switched to main process'
+    );
+    return;
+  }
 
-  // Let pending queries finish before we'll give write access to main process.
-  // We don't want to be writing from two processes at the same time!
-  await waitForPendingQueries();
-
+  // We don't need to wait for pending queries since they are synchronous.
   window.log.info('data.goBackToMainProcess: switching to main process');
 
   shouldUseRendererProcess = false;
+
+  // Print query statistics for whole startup
+  const entries = Array.from(startupQueries.entries());
+  startupQueries.clear();
+
+  // Sort by decreasing duration
+  entries
+    .sort((a, b) => b[1] - a[1])
+    .filter(([_, duration]) => duration > MIN_TRACE_DURATION)
+    .forEach(([query, duration]) => {
+      window.log.info(`startup query: ${query} ${duration}ms`);
+    });
 }
 
 const channelsAsUnknown = fromPairs(
   compact(
-    map(dataInterface, (value: any) => {
+    map(toPairs(dataInterface), ([name, value]: [string, any]) => {
       if (isFunction(value)) {
-        return [value.name, makeChannel(value.name)];
+        return [name, makeChannel(name)];
       }
 
       return null;
@@ -358,8 +376,7 @@ function _updateJob(id: number, data: ClientJobUpdateType) {
     resolve: (value: any) => {
       _removeJob(id);
       const end = Date.now();
-      const delta = end - start;
-      if (delta > 10 || _DEBUG) {
+      if (_DEBUG) {
         window.log.info(
           `SQL channel job ${id} (${fnName}) succeeded in ${end - start}ms`
         );
@@ -449,10 +466,27 @@ function makeChannel(fnName: string) {
     // UI from locking up whenever we do costly db operations.
     if (shouldUseRendererProcess) {
       const serverFnName = fnName as keyof ServerInterface;
+      const start = Date.now();
+
       // Ignoring this error TS2556: Expected 3 arguments, but got 0 or more.
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      return Server[serverFnName](...args);
+      const result = Server[serverFnName](...args);
+
+      const duration = Date.now() - start;
+
+      startupQueries.set(
+        serverFnName,
+        (startupQueries.get(serverFnName) || 0) + duration
+      );
+
+      if (duration > MIN_TRACE_DURATION || _DEBUG) {
+        window.log.info(
+          `Renderer SQL channel job (${fnName}) succeeded in ${duration}ms`
+        );
+      }
+
+      return result;
     }
 
     const jobId = _makeJob(fnName);
@@ -514,8 +548,6 @@ function keysFromArrayBuffer(keys: Array<string>, data: any) {
 // Top-level calls
 
 async function shutdown() {
-  await waitForPendingQueries();
-
   // Stop accepting new SQL jobs, flush outstanding queue
   await _shutdown();
 
@@ -761,7 +793,13 @@ const updateConversationBatcher = createBatcher<ConversationType>({
     // We only care about the most recent update for each conversation
     const byId = groupBy(items, item => item.id);
     const ids = Object.keys(byId);
-    const mostRecent = ids.map(id => last(byId[id]));
+    const mostRecent = ids.map(
+      (id: string): ConversationType => {
+        const maybeLast = last(byId[id]);
+        assert(maybeLast !== undefined, 'Empty array in `groupBy` result');
+        return maybeLast;
+      }
+    );
 
     await updateConversations(mostRecent);
   },
@@ -857,8 +895,15 @@ async function searchConversations(query: string) {
   return conversations;
 }
 
-function handleSearchMessageJSON(messages: Array<SearchResultMessageType>) {
+function handleSearchMessageJSON(
+  messages: Array<SearchResultMessageType>
+): Array<ClientSearchResultMessageType> {
   return messages.map(message => ({
+    json: message.json,
+
+    // Empty array is a default value. `message.json` has the real field
+    bodyRanges: [],
+
     ...JSON.parse(message.json),
     snippet: message.snippet,
   }));
@@ -940,7 +985,7 @@ async function getMessageById(
 ) {
   const message = await channels.getMessageById(id);
   if (!message) {
-    return null;
+    return undefined;
   }
 
   return new Message(message);
@@ -1262,7 +1307,9 @@ async function updateUnprocessedAttempts(id: string, attempts: number) {
 async function updateUnprocessedWithData(id: string, data: UnprocessedType) {
   await channels.updateUnprocessedWithData(id, data);
 }
-async function updateUnprocessedsWithData(array: Array<UnprocessedType>) {
+async function updateUnprocessedsWithData(
+  array: Array<{ id: string; data: UnprocessedType }>
+) {
   await channels.updateUnprocessedsWithData(array);
 }
 

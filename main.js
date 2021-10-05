@@ -93,7 +93,7 @@ const createTrayIcon = require('./app/tray_icon');
 const dockIcon = require('./ts/dock_icon');
 const ephemeralConfig = require('./app/ephemeral_config');
 const logging = require('./ts/logging/main_process_logging');
-const sql = require('./ts/sql/Server').default;
+const { MainSQL } = require('./ts/sql/main');
 const sqlChannels = require('./app/sql_channel');
 const windowState = require('./app/window_state');
 const { createTemplate } = require('./app/menu');
@@ -106,8 +106,10 @@ const OS = require('./ts/OS');
 const { isBeta } = require('./ts/util/version');
 const {
   isSgnlHref,
+  isCaptchaHref,
   isSignalHttpsLink,
   parseSgnlHref,
+  parseCaptchaHref,
   parseSignalHttpsLink,
 } = require('./ts/util/sgnlHref');
 const {
@@ -118,6 +120,13 @@ const {
   TitleBarVisibility,
 } = require('./ts/types/Settings');
 const { Environment } = require('./ts/environment');
+const { ChallengeMainHandler } = require('./ts/main/challengeMain');
+
+const sql = new MainSQL();
+const challengeHandler = new ChallengeMainHandler();
+
+let sqlInitTimeStart = 0;
+let sqlInitTimeEnd = 0;
 
 let appStartInitialSpellcheckSetting = true;
 
@@ -128,14 +137,22 @@ const defaultWebPrefs = {
 };
 
 async function getSpellCheckSetting() {
-  const json = await sql.getItemById('spell-check');
-
-  // Default to `true` if setting doesn't exist yet
-  if (!json) {
-    return true;
+  const fastValue = ephemeralConfig.get('spell-check');
+  if (fastValue !== undefined) {
+    console.log('got fast spellcheck setting', fastValue);
+    return fastValue;
   }
 
-  return json.value;
+  const json = await sql.sqlCall('getItemById', ['spell-check']);
+
+  // Default to `true` if setting doesn't exist yet
+  const slowValue = json ? json.value : true;
+
+  ephemeralConfig.set('spell-check', slowValue);
+
+  console.log('got slow spellcheck setting', slowValue);
+
+  return slowValue;
 }
 
 function showWindow() {
@@ -177,6 +194,12 @@ if (!process.mas) {
         }
 
         showWindow();
+      }
+      const incomingCaptchaHref = getIncomingCaptchaHref(argv);
+      if (incomingCaptchaHref) {
+        const { captcha } = parseCaptchaHref(incomingCaptchaHref, logger);
+        challengeHandler.handleCaptcha(captcha);
+        return true;
       }
       // Are they trying to open a sgnl:// href?
       const incomingHref = getIncomingHref(argv);
@@ -319,7 +342,7 @@ if (OS.isWindows()) {
 async function createWindow() {
   const { screen } = electron;
   const windowOptions = {
-    show: !startInTray, // allow to start minimised in tray
+    show: false,
     width: DEFAULT_WIDTH,
     height: DEFAULT_HEIGHT,
     minWidth: MIN_WIDTH,
@@ -339,7 +362,12 @@ async function createWindow() {
       nodeIntegrationInWorker: false,
       contextIsolation: false,
       enableRemoteModule: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(
+        __dirname,
+        enableCI || config.environment === 'production'
+          ? 'preload.bundle.js'
+          : 'preload.js'
+      ),
       nativeWindowOpen: true,
       spellcheck: await getSpellCheckSetting(),
       backgroundThrottling: false,
@@ -508,6 +536,7 @@ async function createWindow() {
     if (mainWindow) {
       mainWindow.readyForShutdown = true;
     }
+    await sql.close();
     app.quit();
   });
 
@@ -525,7 +554,39 @@ async function createWindow() {
   mainWindow.on('leave-full-screen', () => {
     mainWindow.webContents.send('full-screen-change', false);
   });
+
+  mainWindow.once('ready-to-show', async () => {
+    console.log('main window is ready-to-show');
+
+    // Ignore sql errors and show the window anyway
+    await sqlInitPromise;
+
+    if (!mainWindow) {
+      return;
+    }
+
+    // allow to start minimised in tray
+    if (!startInTray) {
+      console.log('showing main window');
+      mainWindow.show();
+    }
+  });
 }
+
+// Renderer asks if we are done with the database
+ipc.on('database-ready', async event => {
+  const { error } = await sqlInitPromise;
+  if (error) {
+    console.log(
+      'database-ready requested, but got sql error',
+      error && error.stack
+    );
+    return;
+  }
+
+  console.log('sending `database-ready`');
+  event.sender.send('database-ready');
+});
 
 ipc.on('show-window', () => {
   showWindow();
@@ -779,8 +840,8 @@ function showSettingsWindow() {
 
 async function getIsLinked() {
   try {
-    const number = await sql.getItemById('number_id');
-    const password = await sql.getItemById('password');
+    const number = await sql.sqlCall('getItemById', ['number_id']);
+    const password = await sql.sqlCall('getItemById', ['password']);
     return Boolean(number && password);
   } catch (e) {
     return false;
@@ -963,6 +1024,35 @@ function showPermissionsPopupWindow(forCalling, forCamera) {
   });
 }
 
+async function initializeSQL() {
+  const userDataPath = await getRealPath(app.getPath('userData'));
+
+  let key = userConfig.get('key');
+  if (!key) {
+    console.log(
+      'key/initialize: Generating new encryption key, since we did not find it on disk'
+    );
+    // https://www.zetetic.net/sqlcipher/sqlcipher-api/#key
+    key = crypto.randomBytes(32).toString('hex');
+    userConfig.set('key', key);
+  }
+
+  sqlInitTimeStart = Date.now();
+  try {
+    await sql.initialize({
+      configDir: userDataPath,
+      key,
+    });
+  } catch (error) {
+    return { ok: false, error };
+  } finally {
+    sqlInitTimeEnd = Date.now();
+  }
+
+  return { ok: true };
+}
+
+const sqlInitPromise = initializeSQL();
 let captchaWindow;
 function showCaptchaWindow() {
   if (captchaWindow) {
@@ -1014,12 +1104,34 @@ app.on('ready', async () => {
 
   // We use this event only a single time to log the startup time of the app
   // from when it's first ready until the loading screen disappears.
-  ipc.once('signal-app-loaded', () => {
+  ipc.once('signal-app-loaded', (event, info) => {
+    const { preloadTime, connectTime, processedCount } = info;
+
     const loadTime = Date.now() - startTime;
+    const sqlInitTime = sqlInitTimeEnd - sqlInitTimeStart;
+
+    const messageTime = loadTime - preloadTime - connectTime;
+    const messagesPerSec = (processedCount * 1000) / messageTime;
+
     console.log('App loaded - time:', loadTime);
+    console.log('SQL init - time:', sqlInitTime);
+    console.log('Preload - time:', preloadTime);
+    console.log('WebSocket connect - time:', connectTime);
+    console.log('Processed count:', processedCount);
+    console.log('Messages per second:', messagesPerSec);
 
     if (enableCI) {
-      console._log('ci: app_loaded=%j', { loadTime });
+      console._log(
+        'ci: app_loaded=%s',
+        JSON.stringify({
+          loadTime,
+          sqlInitTime,
+          preloadTime,
+          connectTime,
+          processedCount,
+          messagesPerSec,
+        })
+      );
     }
   });
 
@@ -1071,21 +1183,6 @@ app.on('ready', async () => {
 
   GlobalErrors.updateLocale(locale.messages);
 
-  let key = userConfig.get('key');
-  if (!key) {
-    console.log(
-      'key/initialize: Generating new encryption key, since we did not find it on disk'
-    );
-    // https://www.zetetic.net/sqlcipher/sqlcipher-api/#key
-    key = crypto.randomBytes(32).toString('hex');
-    userConfig.set('key', key);
-  }
-  const sqlInitPromise = sql.initialize({
-    configDir: userDataPath,
-    key,
-    messages: locale.messages,
-  });
-
   // If the sql initialization takes more than three seconds to complete, we
   // want to notify the user that things are happening
   const timeout = new Promise(resolve => setTimeout(resolve, 3000, 'timeout'));
@@ -1116,7 +1213,7 @@ app.on('ready', async () => {
 
     loadingWindow.once('ready-to-show', async () => {
       loadingWindow.show();
-      // Wait for sql initialization to complete
+      // Wait for sql initialization to complete, but ignore errors
       await sqlInitPromise;
       loadingWindow.destroy();
       loadingWindow = null;
@@ -1125,9 +1222,11 @@ app.on('ready', async () => {
     loadingWindow.loadURL(prepareURL([__dirname, 'loading.html']));
   });
 
-  try {
-    await sqlInitPromise;
-  } catch (error) {
+  // Run window preloading in parallel with database initialization.
+  await createWindow();
+
+  const { error: sqlError } = await sqlInitPromise;
+  if (sqlError) {
     console.log('sql.initialize was unsuccessful; returning early');
     const buttonIndex = dialog.showMessageBoxSync({
       buttons: [
@@ -1135,7 +1234,7 @@ app.on('ready', async () => {
         locale.messages.deleteAndRestart.message,
       ],
       defaultId: 0,
-      detail: redactAll(error.stack),
+      detail: redactAll(sqlError.stack),
       message: locale.messages.databaseError.message,
       noLink: true,
       type: 'error',
@@ -1143,10 +1242,10 @@ app.on('ready', async () => {
 
     if (buttonIndex === 0) {
       clipboard.writeText(
-        `Database startup error:\n\n${redactAll(error.stack)}`
+        `Database startup error:\n\n${redactAll(sqlError.stack)}`
       );
     } else {
-      await sql.removeDB();
+      await sql.sqlCall('removeDB', []);
       removeUserConfig();
       app.relaunch();
     }
@@ -1158,14 +1257,14 @@ app.on('ready', async () => {
 
   // eslint-disable-next-line more/no-then
   appStartInitialSpellcheckSetting = await getSpellCheckSetting();
-  await sqlChannels.initialize();
+  await sqlChannels.initialize(sql);
 
   try {
     const IDB_KEY = 'indexeddb-delete-needed';
-    const item = await sql.getItemById(IDB_KEY);
+    const item = await sql.sqlCall('getItemById', [IDB_KEY]);
     if (item && item.value) {
-      await sql.removeIndexedDBFiles();
-      await sql.removeItemById(IDB_KEY);
+      await sql.sqlCall('removeIndexedDBFiles', []);
+      await sql.sqlCall('removeItemById', [IDB_KEY]);
     }
   } catch (err) {
     console.log(
@@ -1176,16 +1275,18 @@ app.on('ready', async () => {
 
   async function cleanupOrphanedAttachments() {
     const allAttachments = await attachments.getAllAttachments(userDataPath);
-    const orphanedAttachments = await sql.removeKnownAttachments(
-      allAttachments
-    );
+    const orphanedAttachments = await sql.sqlCall('removeKnownAttachments', [
+      allAttachments,
+    ]);
     await attachments.deleteAll({
       userDataPath,
       attachments: orphanedAttachments,
     });
 
     const allStickers = await attachments.getAllStickers(userDataPath);
-    const orphanedStickers = await sql.removeKnownStickers(allStickers);
+    const orphanedStickers = await sql.sqlCall('removeKnownStickers', [
+      allStickers,
+    ]);
     await attachments.deleteAllStickers({
       userDataPath,
       stickers: orphanedStickers,
@@ -1194,8 +1295,9 @@ app.on('ready', async () => {
     const allDraftAttachments = await attachments.getAllDraftAttachments(
       userDataPath
     );
-    const orphanedDraftAttachments = await sql.removeKnownDraftAttachments(
-      allDraftAttachments
+    const orphanedDraftAttachments = await sql.sqlCall(
+      'removeKnownDraftAttachments',
+      [allDraftAttachments]
     );
     await attachments.deleteAllDraftAttachments({
       userDataPath,
@@ -1218,7 +1320,6 @@ app.on('ready', async () => {
 
   ready = true;
 
-  await createWindow();
   if (usingTrayIcon) {
     tray = createTrayIcon(getMainWindow, locale.messages);
   }
@@ -1353,11 +1454,19 @@ app.on('web-contents-created', (createEvent, contents) => {
 });
 
 app.setAsDefaultProtocolClient('sgnl');
+app.setAsDefaultProtocolClient('signalcaptcha');
 app.on('will-finish-launching', () => {
   // open-url must be set from within will-finish-launching for macOS
   // https://stackoverflow.com/a/43949291
   app.on('open-url', (event, incomingHref) => {
     event.preventDefault();
+
+    if (isCaptchaHref(incomingHref, logger)) {
+      const { captcha } = parseCaptchaHref(incomingHref, logger);
+      challengeHandler.handleCaptcha(captcha);
+      return;
+    }
+
     handleSgnlHref(incomingHref);
   });
 });
@@ -1488,7 +1597,7 @@ installSettingsGetter('badge-count-muted-conversations');
 installSettingsSetter('badge-count-muted-conversations');
 
 installSettingsGetter('spell-check');
-installSettingsSetter('spell-check');
+installSettingsSetter('spell-check', true);
 
 installSettingsGetter('read-receipt-setting');
 installSettingsSetter('read-receipt-setting');
@@ -1603,8 +1712,12 @@ function installSettingsGetter(name) {
   });
 }
 
-function installSettingsSetter(name) {
+function installSettingsSetter(name, isEphemeral = false) {
   ipc.on(`set-${name}`, (event, value) => {
+    if (isEphemeral) {
+      ephemeralConfig.set('spell-check', value);
+    }
+
     if (mainWindow && mainWindow.webContents) {
       ipc.once(`set-success-${name}`, (_event, error) => {
         const contents = event.sender;
@@ -1621,6 +1734,10 @@ function installSettingsSetter(name) {
 
 function getIncomingHref(argv) {
   return argv.find(arg => isSgnlHref(arg, logger));
+}
+
+function getIncomingCaptchaHref(argv) {
+  return argv.find(arg => isCaptchaHref(arg, logger));
 }
 
 function handleSgnlHref(incomingHref) {
