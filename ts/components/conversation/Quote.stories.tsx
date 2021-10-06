@@ -1,7 +1,8 @@
-// Copyright 2020 Signal Messenger, LLC
+// Copyright 2020-2021 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import * as React from 'react';
+import { isString } from 'lodash';
 
 import { action } from '@storybook/addon-actions';
 import { boolean, text } from '@storybook/addon-knobs';
@@ -20,14 +21,17 @@ import {
 import { Props, Quote } from './Quote';
 import { setup as setupI18n } from '../../../js/modules/i18n';
 import enMessages from '../../../_locales/en/messages.json';
+import { getDefaultConversation } from '../../test-both/helpers/getDefaultConversation';
 
 const i18n = setupI18n('en', enMessages);
 
 const story = storiesOf('Components/Conversation/Quote', module);
 
 const defaultMessageProps: MessagesProps = {
-  authorId: 'some-id',
-  authorTitle: 'Person X',
+  author: getDefaultConversation({
+    id: 'some-id',
+    title: 'Person X',
+  }),
   canReply: true,
   canDeleteForEveryone: true,
   canDownload: true,
@@ -60,6 +64,7 @@ const defaultMessageProps: MessagesProps = {
   showContactModal: () => null,
   showExpiredIncomingTapToViewToast: () => null,
   showExpiredOutgoingTapToViewToast: () => null,
+  showForwardMessageModal: () => null,
   showMessageDetail: () => null,
   showVisualAttachment: () => null,
   status: 'sent',
@@ -127,7 +132,12 @@ const createProps = (overrideProps: Partial<Props> = {}): Props => ({
     'referencedMessageNotFound',
     overrideProps.referencedMessageNotFound || false
   ),
-  text: text('text', overrideProps.text || 'A sample message from a pal'),
+  text: text(
+    'text',
+    isString(overrideProps.text)
+      ? overrideProps.text
+      : 'A sample message from a pal'
+  ),
   withContentAbove: boolean(
     'withContentAbove',
     overrideProps.withContentAbove || false
@@ -192,6 +202,7 @@ story.add('Content Above', () => {
 
 story.add('Image Only', () => {
   const props = createProps({
+    text: '',
     rawAttachment: {
       contentType: IMAGE_PNG,
       fileName: 'sax.png',
@@ -202,8 +213,6 @@ story.add('Image Only', () => {
       },
     },
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  props.text = undefined as any;
 
   return <Quote {...props} />;
 });

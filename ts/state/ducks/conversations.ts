@@ -25,11 +25,6 @@ import { AttachmentType } from '../../types/Attachment';
 import { ColorType } from '../../types/Colors';
 import { BodyRangeType } from '../../types/Util';
 import { CallMode, CallHistoryDetailsFromDiskType } from '../../types/Calling';
-import {
-  GroupV2PendingMembership,
-  GroupV2RequestingMembership,
-} from '../../components/conversation/conversation-details/PendingInvites';
-import { GroupV2Membership } from '../../components/conversation/conversation-details/ConversationDetailsMembershipList';
 import { MediaItemType } from '../../components/LightboxGallery';
 import {
   getGroupSizeRecommendedLimit,
@@ -42,11 +37,12 @@ import { toggleSelectedContactForGroupAddition } from '../../groups/toggleSelect
 export type DBConversationType = {
   id: string;
   activeAt?: number;
-  lastMessage: string;
+  lastMessage?: string | null;
   type: string;
 };
 
 export type LastMessageStatus =
+  | 'paused'
   | 'error'
   | 'partial-sent'
   | 'sending'
@@ -65,6 +61,7 @@ export type ConversationType = {
   profileName?: string;
   about?: string;
   avatarPath?: string;
+  unblurredAvatarPath?: string;
   areWeAdmin?: boolean;
   areWePending?: boolean;
   areWePendingApproval?: boolean;
@@ -72,7 +69,6 @@ export type ConversationType = {
   canEditGroupInfo?: boolean;
   color?: ColorType;
   discoveredUnregisteredAt?: number;
-  isAccepted?: boolean;
   isArchived?: boolean;
   isBlocked?: boolean;
   isGroupV1AndDisabled?: boolean;
@@ -97,18 +93,25 @@ export type ConversationType = {
   accessControlAttributes?: number;
   accessControlMembers?: number;
   expireTimer?: number;
-  // This is used by the ConversationDetails set of components, it includes the
-  // membersV2 data and also has some extra metadata attached to the object
-  memberships?: Array<GroupV2Membership>;
-  pendingMemberships?: Array<GroupV2PendingMembership>;
-  pendingApprovalMemberships?: Array<GroupV2RequestingMembership>;
+  memberships?: Array<{
+    conversationId: string;
+    isAdmin: boolean;
+  }>;
+  pendingMemberships?: Array<{
+    conversationId: string;
+    addedByUserId?: string;
+  }>;
+  pendingApprovalMemberships?: Array<{
+    conversationId: string;
+  }>;
   muteExpiresAt?: number;
   type: ConversationTypeType;
-  isMe?: boolean;
+  isMe: boolean;
   lastUpdated?: number;
   // This is used by the CompositionInput for @mentions
   sortedGroupMembers?: Array<ConversationType>;
   title: string;
+  searchableTitle?: string;
   unreadCount?: number;
   isSelected?: boolean;
   typingContact?: {
@@ -126,31 +129,40 @@ export type ConversationType = {
   draftBodyRanges?: Array<BodyRangeType>;
   draftPreview?: string;
 
-  sharedGroupNames?: Array<string>;
+  sharedGroupNames: Array<string>;
   groupVersion?: 1 | 2;
   groupId?: string;
   groupLink?: string;
   messageRequestsEnabled?: boolean;
-  acceptedMessageRequest?: boolean;
+  acceptedMessageRequest: boolean;
   secretParams?: string;
   publicParams?: string;
 };
 export type ConversationLookupType = {
   [key: string]: ConversationType;
 };
+export type CustomError = Error & {
+  identifier?: string;
+  number?: string;
+};
 export type MessageType = {
   id: string;
   conversationId: string;
   source?: string;
   sourceUuid?: string;
-  type:
+  type?:
     | 'incoming'
     | 'outgoing'
     | 'group'
     | 'keychange'
     | 'verified-change'
     | 'message-history-unsynced'
-    | 'call-history';
+    | 'call-history'
+    | 'chat-session-refreshed'
+    | 'group-v1-migration'
+    | 'group-v2-change'
+    | 'profile-change'
+    | 'timer-notification';
   quote?: { author?: string; authorUuid?: string };
   received_at: number;
   sent_at?: number;
@@ -179,7 +191,7 @@ export type MessageType = {
   }>;
   deletedForEveryone?: boolean;
 
-  errors?: Array<Error>;
+  errors?: Array<CustomError>;
   group_update?: unknown;
   callHistoryDetails?: CallHistoryDetailsFromDiskType;
 
@@ -251,11 +263,11 @@ type ComposerGroupCreationState = {
 type ComposerStateType =
   | {
       step: ComposerStep.StartDirectConversation;
-      contactSearchTerm: string;
+      searchTerm: string;
     }
   | ({
       step: ComposerStep.ChooseGroupMembers;
-      contactSearchTerm: string;
+      searchTerm: string;
       cantAddContactIdForModal: undefined | string;
     } & ComposerGroupCreationState)
   | ({
@@ -521,7 +533,7 @@ type SetComposeGroupNameActionType = {
 };
 type SetComposeSearchTermActionType = {
   type: 'SET_COMPOSE_SEARCH_TERM';
-  payload: { contactSearchTerm: string };
+  payload: { searchTerm: string };
 };
 type SetRecentMediaItemsActionType = {
   type: 'SET_RECENT_MEDIA_ITEMS';
@@ -1004,11 +1016,11 @@ function setComposeGroupName(groupName: string): SetComposeGroupNameActionType {
 }
 
 function setComposeSearchTerm(
-  contactSearchTerm: string
+  searchTerm: string
 ): SetComposeSearchTermActionType {
   return {
     type: 'SET_COMPOSE_SEARCH_TERM',
-    payload: { contactSearchTerm },
+    payload: { searchTerm },
   };
 }
 
@@ -2109,7 +2121,7 @@ export function reducer(
       showArchived: false,
       composer: {
         step: ComposerStep.StartDirectConversation,
-        contactSearchTerm: '',
+        searchTerm: '',
       },
     };
   }
@@ -2146,7 +2158,7 @@ export function reducer(
       showArchived: false,
       composer: {
         step: ComposerStep.ChooseGroupMembers,
-        contactSearchTerm: '',
+        searchTerm: '',
         selectedConversationIds,
         cantAddContactIdForModal: undefined,
         recommendedGroupSizeModalState,
@@ -2245,7 +2257,7 @@ export function reducer(
       ...state,
       composer: {
         ...composer,
-        contactSearchTerm: action.payload.contactSearchTerm,
+        searchTerm: action.payload.searchTerm,
       },
     };
   }

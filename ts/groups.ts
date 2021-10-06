@@ -12,6 +12,7 @@ import {
 } from 'lodash';
 import { ClientZkGroupCipher } from 'zkgroup';
 import { v4 as getGuid } from 'uuid';
+import LRU from 'lru-cache';
 import {
   getCredentialsForToday,
   GROUP_CREDENTIALS_KEY,
@@ -74,6 +75,7 @@ import MessageSender, { CallbackResultType } from './textsecure/SendMessage';
 import { CURRENT_SCHEMA_VERSION as MAX_MESSAGE_SCHEMA } from '../js/modules/types/message';
 import { ConversationModel } from './models/conversations';
 import { getGroupSizeHardLimit } from './groups/limits';
+import { ourProfileKeyService } from './services/ourProfileKey';
 
 export { joinViaLink } from './groups/joinViaLink';
 
@@ -201,6 +203,18 @@ export type GroupV2ChangeType = {
   from?: string;
   details: Array<GroupV2ChangeDetailType>;
 };
+
+export type GroupFields = {
+  readonly id: ArrayBuffer;
+  readonly secretParams: ArrayBuffer;
+  readonly publicParams: ArrayBuffer;
+};
+
+const MAX_CACHED_GROUP_FIELDS = 100;
+
+const groupFieldsCache = new LRU<string, GroupFields>({
+  max: MAX_CACHED_GROUP_FIELDS,
+});
 
 const { updateConversation } = dataInterface;
 
@@ -1238,10 +1252,10 @@ export async function modifyGroupV2({
 
         // Send message to notify group members (including pending members) of change
         const profileKey = conversation.get('profileSharing')
-          ? window.storage.get('profileKey')
+          ? await ourProfileKeyService.get()
           : undefined;
 
-        const sendOptions = conversation.getSendOptions();
+        const sendOptions = await conversation.getSendOptions();
         const timestamp = Date.now();
 
         const promise = conversation.wrapSend(
@@ -1314,18 +1328,26 @@ export function idForLogging(groupId: string | undefined): string {
   return `groupv2(${groupId})`;
 }
 
-export function deriveGroupFields(
-  masterKey: ArrayBuffer
-): { id: ArrayBuffer; secretParams: ArrayBuffer; publicParams: ArrayBuffer } {
+export function deriveGroupFields(masterKey: ArrayBuffer): GroupFields {
+  const cacheKey = arrayBufferToBase64(masterKey);
+  const cached = groupFieldsCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  window.log.info('deriveGroupFields: cache miss');
+
   const secretParams = deriveGroupSecretParams(masterKey);
   const publicParams = deriveGroupPublicParams(secretParams);
   const id = deriveGroupID(secretParams);
 
-  return {
+  const fresh = {
     id,
     secretParams,
     publicParams,
   };
+  groupFieldsCache.set(cacheKey, fresh);
+  return fresh;
 }
 
 async function makeRequestWithTemporalRetry<T>({
@@ -1599,7 +1621,7 @@ export async function createGroupV2({
   });
 
   const timestamp = Date.now();
-  const profileKey = ourConversation.get('profileKey');
+  const profileKey = await ourProfileKeyService.get();
 
   const groupV2Info = conversation.getGroupV2Info({
     includePendingMembers: true,
@@ -1612,7 +1634,7 @@ export async function createGroupV2({
       sender.sendMessageToGroup({
         groupV2: groupV2Info,
         timestamp,
-        profileKey: profileKey ? base64ToArrayBuffer(profileKey) : undefined,
+        profileKey,
       }),
     timestamp,
   });
@@ -1932,8 +1954,6 @@ export async function initiateMigrationToGroupV2(
   // Ensure we have the credentials we need before attempting GroupsV2 operations
   await maybeFetchNewCredentials();
 
-  let ourProfileKey: undefined | string;
-
   try {
     await conversation.queueJob(async () => {
       const ACCESS_ENUM =
@@ -1976,7 +1996,6 @@ export async function initiateMigrationToGroupV2(
           `initiateMigrationToGroupV2/${logId}: cannot get our own conversation. Cannot migrate`
         );
       }
-      ourProfileKey = ourConversation.get('profileKey');
 
       const {
         membersV2,
@@ -2116,6 +2135,10 @@ export async function initiateMigrationToGroupV2(
   const logId = conversation.idForLogging();
   const timestamp = Date.now();
 
+  const ourProfileKey:
+    | ArrayBuffer
+    | undefined = await ourProfileKeyService.get();
+
   await wrapWithSyncMessageSend({
     conversation,
     logId: `sendMessageToGroup/${logId}`,
@@ -2126,9 +2149,7 @@ export async function initiateMigrationToGroupV2(
           includePendingMembers: true,
         }),
         timestamp,
-        profileKey: ourProfileKey
-          ? base64ToArrayBuffer(ourProfileKey)
-          : undefined,
+        profileKey: ourProfileKey,
       }),
     timestamp,
   });
@@ -2319,7 +2340,7 @@ export async function joinGroupV2ViaLinkAndMigrate({
     derivedGroupV2Id: undefined,
     members: undefined,
   };
-  const groupChangeMessages = [
+  const groupChangeMessages: Array<MessageAttributesType> = [
     {
       ...generateBasicMessage(),
       type: 'group-v1-migration',
@@ -2577,7 +2598,8 @@ type MaybeUpdatePropsType = {
 };
 
 export async function waitThenMaybeUpdateGroup(
-  options: MaybeUpdatePropsType
+  options: MaybeUpdatePropsType,
+  { viaSync = false } = {}
 ): Promise<void> {
   // First wait to process all incoming messages on the websocket
   await window.waitForEmptyEventQueue();
@@ -2588,7 +2610,7 @@ export async function waitThenMaybeUpdateGroup(
   await conversation.queueJob(async () => {
     try {
       // And finally try to update the group
-      await maybeUpdateGroup(options);
+      await maybeUpdateGroup(options, { viaSync });
     } catch (error) {
       window.log.error(
         `waitThenMaybeUpdateGroup/${conversation.idForLogging()}: maybeUpdateGroup failure:`,
@@ -2598,14 +2620,17 @@ export async function waitThenMaybeUpdateGroup(
   });
 }
 
-export async function maybeUpdateGroup({
-  conversation,
-  dropInitialJoinMessage,
-  groupChangeBase64,
-  newRevision,
-  receivedAt,
-  sentAt,
-}: MaybeUpdatePropsType): Promise<void> {
+export async function maybeUpdateGroup(
+  {
+    conversation,
+    dropInitialJoinMessage,
+    groupChangeBase64,
+    newRevision,
+    receivedAt,
+    sentAt,
+  }: MaybeUpdatePropsType,
+  { viaSync = false } = {}
+): Promise<void> {
   const logId = conversation.idForLogging();
 
   try {
@@ -2620,7 +2645,10 @@ export async function maybeUpdateGroup({
       dropInitialJoinMessage,
     });
 
-    await updateGroup({ conversation, receivedAt, sentAt, updates });
+    await updateGroup(
+      { conversation, receivedAt, sentAt, updates },
+      { viaSync }
+    );
   } catch (error) {
     window.log.error(
       `maybeUpdateGroup/${logId}: Failed to update group:`,
@@ -2630,17 +2658,20 @@ export async function maybeUpdateGroup({
   }
 }
 
-async function updateGroup({
-  conversation,
-  receivedAt,
-  sentAt,
-  updates,
-}: {
-  conversation: ConversationModel;
-  receivedAt?: number;
-  sentAt?: number;
-  updates: UpdatesResultType;
-}): Promise<void> {
+async function updateGroup(
+  {
+    conversation,
+    receivedAt,
+    sentAt,
+    updates,
+  }: {
+    conversation: ConversationModel;
+    receivedAt?: number;
+    sentAt?: number;
+    updates: UpdatesResultType;
+  },
+  { viaSync = false } = {}
+): Promise<void> {
   const { newAttributes, groupChangeMessages, members } = updates;
 
   const startingRevision = conversation.get('revision');
@@ -2663,15 +2694,21 @@ async function updateGroup({
   const previousId = conversation.get('groupId');
   const idChanged = previousId && previousId !== newAttributes.groupId;
 
+  // We force this conversation into the left pane if this is the first time we've
+  //   fetched data about it, and we were able to fetch its name. Nobody likes to see
+  //   Unknown Group in the left pane.
+  let activeAt = null;
+  if (viaSync) {
+    activeAt = null;
+  } else if ((isInitialDataFetch || justJoinedGroup) && newAttributes.name) {
+    activeAt = initialSentAt;
+  } else {
+    activeAt = newAttributes.active_at;
+  }
+
   conversation.set({
     ...newAttributes,
-    // We force this conversation into the left pane if this is the first time we've
-    //   fetched data about it, and we were able to fetch its name. Nobody likes to see
-    //   Unknown Group in the left pane.
-    active_at:
-      (isInitialDataFetch || justJoinedGroup) && newAttributes.name
-        ? initialSentAt
-        : newAttributes.active_at,
+    active_at: activeAt,
     temporaryMemberCount: isInGroup
       ? undefined
       : newAttributes.temporaryMemberCount,
@@ -3018,7 +3055,7 @@ async function generateLeftGroupChanges(
   const isNewlyRemoved =
     existingMembers.length > (newAttributes.membersV2 || []).length;
 
-  const youWereRemovedMessage = {
+  const youWereRemovedMessage: MessageAttributesType = {
     ...generateBasicMessage(),
     type: 'group-v2-change',
     groupV2Change: {

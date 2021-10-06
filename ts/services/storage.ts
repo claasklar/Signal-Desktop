@@ -34,6 +34,7 @@ import { storageJobQueue } from '../util/JobQueue';
 import { sleep } from '../util/sleep';
 import { isMoreRecentThan } from '../util/timestamp';
 import { isStorageWriteFeatureEnabled } from '../storage/isFeatureEnabled';
+import { ourProfileKeyService } from './ourProfileKey';
 
 const {
   eraseStorageServiceStateFromConversations,
@@ -364,7 +365,7 @@ async function generateManifest(
 
     const localKeys: Set<string> = new Set();
     manifestRecordKeys.forEach((identifier: ManifestRecordIdentifierClass) => {
-      const storageID = arrayBufferToBase64(identifier.raw.toArrayBuffer());
+      const storageID = arrayBufferToBase64(identifier.raw);
       localKeys.add(storageID);
 
       if (!remoteKeys.has(storageID)) {
@@ -684,7 +685,8 @@ async function mergeRecord(
     window.log.error(
       'storageService.mergeRecord: Error with',
       redactStorageID(storageID),
-      itemType
+      itemType,
+      String(err)
     );
   }
 
@@ -1034,6 +1036,7 @@ async function sync(): Promise<ManifestRecordClass | undefined> {
     );
   }
 
+  window.Signal.Util.postLinkExperience.stop();
   window.log.info('storageService.sync: complete');
   return manifest;
 }
@@ -1154,7 +1157,9 @@ export const runStorageServiceSyncJob = debounce(() => {
     return;
   }
 
-  storageJobQueue(async () => {
-    await sync();
-  }, `sync v${window.storage.get('manifestVersion')}`);
+  ourProfileKeyService.blockGetWithPromise(
+    storageJobQueue(async () => {
+      await sync();
+    }, `sync v${window.storage.get('manifestVersion')}`)
+  );
 }, 500);

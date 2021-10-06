@@ -16,6 +16,7 @@ import {
   GroupCredentialsType,
   GroupLogResponseType,
   ProxiedRequestOptionsType,
+  ChallengeType,
   WebAPIType,
 } from './WebAPI';
 import createTaskWithTimeout from './TaskWithTimeout';
@@ -65,11 +66,11 @@ function stringToArrayBuffer(str: string): ArrayBuffer {
 export type SendMetadataType = {
   [identifier: string]: {
     accessKey: string;
+    senderCertificate?: SerializedCertificateType;
   };
 };
 
 export type SendOptionsType = {
-  senderCertificate?: SerializedCertificateType;
   sendMetadata?: SendMetadataType;
   online?: boolean;
 };
@@ -160,7 +161,6 @@ class Message {
 
   quote?: {
     id?: number;
-    author?: string;
     authorUuid?: string;
     text?: string;
     attachments?: Array<AttachmentType>;
@@ -339,7 +339,6 @@ class Message {
       const { quote } = proto;
 
       quote.id = this.quote.id || null;
-      quote.author = this.quote.author || null;
       quote.authorUuid = this.quote.authorUuid || null;
       quote.text = this.quote.text || null;
       quote.attachments = (this.quote.attachments || []).map(
@@ -785,11 +784,10 @@ export default class MessageSender {
     }
 
     const ourNumber = window.textsecure.storage.user.getNumber();
-    const sendOptions = window.ConversationController.prepareForSend(
-      ourNumber,
-      {
+    const sendOptions = (
+      await window.ConversationController.prepareForSend(ourNumber, {
         syncMessage: true,
-      }
+      })
     ).sendOptions as SendOptionsType;
     sendOptions.online = false;
 
@@ -2000,5 +1998,11 @@ export default class MessageSender {
     options: GroupCredentialsType
   ): Promise<GroupExternalCredentialClass> {
     return this.server.getGroupExternalCredential(options);
+  }
+
+  public async sendChallengeResponse(
+    challengeResponse: ChallengeType
+  ): Promise<void> {
+    return this.server.sendChallengeResponse(challengeResponse);
   }
 }

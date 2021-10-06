@@ -10,6 +10,7 @@ import {
 import Crypto from './textsecure/Crypto';
 import MessageReceiver from './textsecure/MessageReceiver';
 import MessageSender from './textsecure/SendMessage';
+import SyncRequest from './textsecure/SyncRequest';
 import EventTarget from './textsecure/EventTarget';
 import { ByteBufferClass, WhatIsThis } from './window.d';
 import SendMessage, { SendOptionsType } from './textsecure/SendMessage';
@@ -90,7 +91,7 @@ export type TextSecureType = {
   MessageReceiver: typeof MessageReceiver;
   AccountManager: WhatIsThis;
   MessageSender: WhatIsThis;
-  SyncRequest: WhatIsThis;
+  SyncRequest: typeof SyncRequest;
 };
 
 type StringViewType = {
@@ -726,11 +727,13 @@ export declare namespace DataMessageClass {
   // Note: deep nesting
   class Quote {
     id: ProtoBigNumberType | null;
-    author: string | null;
     authorUuid: string | null;
     text: string | null;
     attachments?: Array<DataMessageClass.Quote.QuotedAttachment>;
     bodyRanges?: Array<DataMessageClass.BodyRange>;
+
+    // Added later during processing
+    referencedMessageNotFound?: boolean;
   }
 
   class BodyRange {
@@ -1065,6 +1068,7 @@ export declare class ContactRecordClass {
   whitelisted?: boolean | null;
   archived?: boolean | null;
   markedUnread?: boolean;
+  mutedUntilTimestamp?: ProtoBigNumberType;
 
   __unknownFields?: ArrayBuffer;
 }
@@ -1081,6 +1085,7 @@ export declare class GroupV1RecordClass {
   whitelisted?: boolean | null;
   archived?: boolean | null;
   markedUnread?: boolean;
+  mutedUntilTimestamp?: ProtoBigNumberType;
 
   __unknownFields?: ArrayBuffer;
 }
@@ -1097,6 +1102,7 @@ export declare class GroupV2RecordClass {
   whitelisted?: boolean | null;
   archived?: boolean | null;
   markedUnread?: boolean;
+  mutedUntilTimestamp?: ProtoBigNumberType;
 
   __unknownFields?: ArrayBuffer;
 }

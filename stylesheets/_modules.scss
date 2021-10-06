@@ -297,6 +297,17 @@
     );
   }
 }
+.module-message__error--paused {
+  @include light-theme {
+    @include color-svg(
+      '../images/icons/v2/error-outline-24.svg',
+      $color-gray-60
+    );
+  }
+  @include dark-theme {
+    @include color-svg('../images/icons/v2/error-solid-24.svg', $color-gray-45);
+  }
+}
 
 .module-message__error--outgoing {
   left: 8px;
@@ -789,8 +800,8 @@
 .module-message__generic-attachment__text {
   flex-grow: 1;
   margin-left: 8px;
-  // The width of the icon plus our 8px margin
-  max-width: calc(100% - 37px);
+  // The width of the icon plus our 8px margin plus 1px leeway
+  max-width: calc(100% - 36px);
 }
 
 .module-message__generic-attachment__file-name {
@@ -867,6 +878,7 @@
   margin-left: -12px;
   margin-right: -12px;
   width: calc(100% + 24px);
+  outline: none;
 
   margin-top: -10px;
   margin-bottom: 5px;
@@ -1260,6 +1272,7 @@
   margin-bottom: 2px;
 }
 
+.module-message__metadata__status-icon--paused,
 .module-message__metadata__status-icon--sending {
   animation: module-message__metadata__status-icon--spinning 4s linear infinite;
 
@@ -1422,7 +1435,7 @@
   &:focus {
     outline: none;
 
-    .module-avatar {
+    .module-Avatar {
       @include keyboard-mode {
         box-shadow: 0 0 0 3px $ultramarine-ui-light;
       }
@@ -2498,7 +2511,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     text-align: center;
 
     @include light-theme {
-      color: $color-gray-90;
+      color: $color-gray-60;
     }
     @include dark-theme {
       color: $color-gray-05;
@@ -2530,7 +2543,7 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
     text-align: center;
 
     @include light-theme {
-      color: $color-gray-90;
+      color: $color-gray-60;
     }
     @include dark-theme {
       color: $color-gray-05;
@@ -3256,6 +3269,7 @@ button.module-conversation-details__action-button {
   }
 
   &-panel-row {
+    $row-root-selector: '#{&}__root';
     &__root {
       align-items: center;
       border-radius: 5px;
@@ -3335,7 +3349,8 @@ button.module-conversation-details__action-button {
       overflow: hidden;
       opacity: 0;
 
-      &:focus-within {
+      #{$row-root-selector}:hover &,
+      #{$row-root-selector}:focus-within & {
         opacity: 1;
       }
     }
@@ -3928,6 +3943,46 @@ button.module-conversation-details__action-button {
       @include font-body-2-bold;
     }
   }
+
+  &__message-request-warning {
+    @include font-body-2;
+
+    &__message {
+      display: flex;
+      margin-bottom: 12px;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+
+      @include light-theme {
+        color: $color-gray-60;
+      }
+      @include dark-theme {
+        color: $color-gray-25;
+      }
+
+      &::before {
+        content: '';
+        display: block;
+        height: 14px;
+        margin-right: 8px;
+        width: 14px;
+
+        @include light-theme {
+          @include color-svg(
+            '../images/icons/v2/info-outline-24.svg',
+            $color-gray-60
+          );
+        }
+        @include dark-theme {
+          @include color-svg(
+            '../images/icons/v2/info-solid-24.svg',
+            $color-gray-25
+          );
+        }
+      }
+    }
+  }
 }
 
 // Module: Message Request Actions
@@ -3970,359 +4025,12 @@ button.module-conversation-details__action-button {
     flex-direction: row;
     justify-content: center;
 
-    &__button {
-      border: none;
-      border-radius: 4px;
+    .module-Button {
       min-width: 80px;
-      height: 36px;
-      padding: 0 14px;
-      text-align: center;
-
-      &:focus {
-        outline: none;
-
-        @include keyboard-mode {
-          box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
-        }
-      }
-
-      @include font-body-1-bold;
-
-      @include light-theme {
-        background-color: $color-gray-05;
-      }
-
-      @include dark-theme {
-        background-color: $color-gray-75;
-      }
 
       &:not(:last-of-type) {
         margin-right: 8px;
       }
-
-      &--deny {
-        color: $color-accent-red;
-      }
-
-      &--accept {
-        color: $color-accent-blue;
-      }
-    }
-  }
-}
-
-// Module: Avatar
-
-.module-avatar {
-  position: relative;
-  vertical-align: middle;
-  display: inline-block;
-  border-radius: 50%;
-  user-select: none;
-
-  img {
-    object-fit: cover;
-    border-radius: 50%;
-  }
-}
-
-.module-avatar-button {
-  @include button-reset;
-
-  // Ensures that the border of the item sticks tight to the inner contents
-  width: 100%;
-  line-height: 0;
-  border-radius: 50%;
-
-  @include keyboard-mode {
-    &:focus {
-      box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
-    }
-  }
-}
-
-.module-avatar__label {
-  width: 100%;
-  text-align: center;
-  font-weight: bold;
-  text-transform: uppercase;
-
-  @include light-theme {
-    color: $color-white;
-  }
-  @include dark-theme {
-    color: $color-gray-05;
-  }
-}
-
-.module-avatar__icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.module-avatar__icon--group {
-  @include light-theme {
-    @include color-svg('../images/icons/v2/group-outline-40.svg', $color-white);
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/group-outline-40.svg',
-      $color-gray-05
-    );
-  }
-}
-
-.module-avatar__icon--direct {
-  @include light-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-outline-40.svg',
-      $color-white
-    );
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-outline-40.svg',
-      $color-gray-05
-    );
-  }
-}
-
-.module-avatar--28 {
-  min-width: 28px;
-  height: 28px;
-  width: 28px;
-
-  img {
-    height: 28px;
-    width: 28px;
-  }
-}
-
-.module-avatar__icon--28.module-avatar__icon--group {
-  height: 20px;
-  width: 20px;
-  @include light-theme {
-    @include color-svg('../images/icons/v2/group-outline-20.svg', $color-white);
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/group-outline-20.svg',
-      $color-gray-05
-    );
-  }
-}
-.module-avatar__icon--28.module-avatar__icon--direct {
-  height: 20px;
-  width: 20px;
-  @include light-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-outline-20.svg',
-      $color-white
-    );
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-outline-20.svg',
-      $color-gray-05
-    );
-  }
-}
-
-.module-avatar__label--28 {
-  font-size: 14px;
-  line-height: 28px;
-}
-
-.module-avatar--32 {
-  height: 32px;
-  width: 32px;
-  min-width: 32px;
-
-  img {
-    height: 32px;
-    width: 32px;
-  }
-}
-
-.module-avatar__icon--32.module-avatar__icon--group {
-  height: 20px;
-  width: 20px;
-  @include light-theme {
-    @include color-svg('../images/icons/v2/group-outline-20.svg', $color-white);
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/group-outline-20.svg',
-      $color-gray-05
-    );
-  }
-}
-.module-avatar__icon--32.module-avatar__icon--direct {
-  height: 20px;
-  width: 20px;
-  @include light-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-outline-20.svg',
-      $color-white
-    );
-  }
-  @include dark-theme {
-    @include color-svg(
-      '../images/icons/v2/profile-outline-20.svg',
-      $color-gray-05
-    );
-  }
-}
-
-.module-avatar__label--32 {
-  font-size: 14px;
-  line-height: 32px;
-}
-
-.module-avatar--52 {
-  height: 52px;
-  width: 52px;
-  min-width: 52px;
-
-  img {
-    height: 52px;
-    width: 52px;
-  }
-}
-
-.module-avatar__label--52 {
-  width: 52px;
-  font-size: 22px;
-  letter-spacing: 0.19px;
-  line-height: 52px;
-}
-
-.module-avatar__icon--52 {
-  height: 38px;
-  width: 38px;
-}
-.module-avatar__icon--52.module-avatar__icon--direct {
-  height: 42px;
-  width: 42px;
-}
-
-.module-avatar--80 {
-  height: 80px;
-  width: 80px;
-  min-width: 80px;
-
-  img {
-    height: 80px;
-    width: 80px;
-  }
-}
-
-.module-avatar__label--80 {
-  width: 80px;
-  font-size: 40px;
-  line-height: 80px;
-}
-
-.module-avatar__icon--80 {
-  height: 58px;
-  width: 58px;
-}
-
-.module-avatar__icon--80.module-avatar__icon--direct {
-  height: 62px;
-  width: 62px;
-}
-
-.module-avatar--96 {
-  height: 96px;
-  width: 96px;
-  min-width: 96px;
-
-  img {
-    height: 96px;
-    width: 96px;
-  }
-}
-
-.module-avatar__label--96 {
-  width: 96px;
-  font-size: 48px;
-  line-height: 96px;
-}
-
-.module-avatar__icon--96 {
-  height: 70px;
-  width: 70px;
-}
-
-.module-avatar--112 {
-  height: 112px;
-  width: 112px;
-  min-width: 112px;
-
-  img {
-    height: 112px;
-    width: 112px;
-  }
-}
-
-.module-avatar__label--112 {
-  width: 112px;
-  font-size: 56px;
-  line-height: 112px;
-}
-
-.module-avatar__icon--112 {
-  height: 81px;
-  width: 81px;
-}
-.module-avatar__icon--112.module-avatar__icon--direct {
-  height: 87px;
-  width: 87px;
-}
-
-.module-avatar__icon--note-to-self {
-  width: 70%;
-  height: 70%;
-
-  @include light-theme {
-    @include color-svg('../images/note-28.svg', $color-white);
-  }
-  @include dark-theme {
-    @include color-svg('../images/note-28.svg', $color-gray-05);
-  }
-}
-
-.module-avatar--no-image {
-  @include light-theme {
-    background-color: $color-conversation-grey;
-  }
-  @include dark-theme {
-    background-color: $color-conversation-grey-shade;
-  }
-}
-
-.module-avatar__spinner-container {
-  padding: 4px;
-}
-
-.module-avatar--signal-blue {
-  background-color: $ultramarine-ui-light;
-}
-
-@each $color, $value in $conversation-colors {
-  .module-avatar--#{$color} {
-    @include light-theme {
-      background-color: $value;
-    }
-  }
-}
-@each $color, $value in $conversation-colors-shade {
-  .module-avatar--#{$color} {
-    @include dark-theme {
-      background-color: $value;
     }
   }
 }
@@ -5525,6 +5233,10 @@ button.module-image__border-overlay:focus {
   }
 }
 
+.module-spinner__circle--on-captcha {
+  background-color: $color-white-alpha-40;
+}
+
 .module-spinner__circle--on-progress-dialog {
   @include light-theme {
     background-color: $color-white;
@@ -5537,6 +5249,9 @@ button.module-image__border-overlay:focus {
   background-color: $ultramarine-ui-light;
 }
 .module-spinner__arc--on-avatar {
+  background-color: $color-white;
+}
+.module-spinner__arc--on-captcha {
   background-color: $color-white;
 }
 
@@ -6715,7 +6430,7 @@ button.module-image__border-overlay:focus {
       }
 
       // The avatar image can be dragged on Windows.
-      .module-avatar img {
+      .module-Avatar img {
         -webkit-user-drag: none;
         -webkit-user-select: none;
       }
@@ -7294,6 +7009,21 @@ button.module-image__border-overlay:focus {
                   );
                 }
               }
+
+              &--paused {
+                @include light-theme {
+                  @include color-svg(
+                    '../images/icons/v2/error-outline-12.svg',
+                    $color-gray-60
+                  );
+                }
+                @include dark-theme {
+                  @include color-svg(
+                    '../images/icons/v2/error-solid-12.svg',
+                    $color-gray-45
+                  );
+                }
+              }
             }
 
             &__message-search-result-contents {
@@ -7429,6 +7159,36 @@ button.module-image__border-overlay:focus {
   width: $left-pane-width;
   height: 100%;
   position: relative;
+}
+
+.module-left-pane__empty {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  padding: 0 32px;
+  text-align: center;
+
+  &--composer_icon {
+    align-items: center;
+    background-color: $color-gray-05;
+    border-radius: 100%;
+    display: inline-flex;
+    height: 28px;
+    justify-content: center;
+    margin-bottom: -2px;
+    margin-left: 4px;
+    vertical-align: bottom;
+    width: 28px;
+
+    &--icon {
+      $icon: '../images/icons/v2/compose-outline-24.svg';
+      @include color-svg($icon, $color-gray-90);
+      display: inline-block;
+      height: 16px;
+      width: 16px;
+    }
+  }
 }
 
 .module-left-pane__header {
@@ -7669,278 +7429,6 @@ button.module-image__border-overlay:focus {
     background: $color-gray-75;
     ::-webkit-scrollbar-thumb {
       border: 2px solid $color-gray-75;
-    }
-  }
-}
-
-// Module: SafetyNumberChangeDialog
-
-.module-sfn-dialog__title {
-  @include font-body-1-bold;
-  text-align: center;
-
-  @include dark-theme {
-    color: $color-white;
-  }
-}
-
-.module-sfn-dialog__message {
-  @include font-body-2;
-  text-align: center;
-
-  @include light-theme {
-    color: $color-gray-60;
-  }
-
-  @include dark-theme {
-    color: $color-gray-25;
-  }
-}
-
-.module-sfn-dialog__contacts {
-  list-style-type: none;
-  max-height: 300px;
-  overflow-y: scroll;
-  padding: 0;
-}
-
-.module-sfn-dialog__contact {
-  align-items: center;
-  display: flex;
-  flex-direction: row;
-  margin-bottom: 16px;
-
-  &--wrapper {
-    flex-grow: 1;
-    margin-left: 12px;
-  }
-
-  &--name {
-    @include font-body-1-bold;
-
-    @include dark-theme {
-      color: $color-white;
-    }
-  }
-
-  &--number {
-    @include light-theme {
-      color: $color-gray-60;
-    }
-
-    @include dark-theme {
-      color: $color-gray-25;
-    }
-  }
-
-  &--view {
-    @include font-body-1-bold;
-    background: inherit;
-    border: none;
-    cursor: pointer;
-    margin-right: 2px;
-    outline: none;
-    padding: 8px 14px;
-
-    @include keyboard-mode {
-      &:focus {
-        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
-      }
-    }
-
-    @include light-theme {
-      color: $ultramarine-ui-light;
-    }
-
-    @include dark-theme {
-      color: $ultramarine-ui-dark;
-    }
-  }
-}
-
-.module-sfn-dialog__actions {
-  border-top: 1px solid $color-gray-05;
-  display: flex;
-  justify-content: flex-end;
-  margin-left: -16px;
-  margin-right: -16px;
-  margin-top: -14px;
-  padding-left: 16px;
-  padding-right: 16px;
-  padding-top: 16px;
-
-  &--cancel {
-    @include font-body-1-bold;
-    border: none;
-    border-radius: 4px;
-    outline: none;
-    padding: 7px 14px;
-
-    @include mouse-mode {
-      &:hover {
-        background: $color-gray-15;
-      }
-    }
-
-    @include keyboard-mode {
-      &:focus {
-        box-shadow: 0px 0px 0px 2px $ultramarine-ui-light;
-      }
-    }
-
-    @include light-theme {
-      background-color: $color-gray-05;
-      color: $ultramarine-ui-light;
-    }
-
-    @include dark-theme {
-      background-color: $color-gray-75;
-      color: $ultramarine-ui-dark;
-    }
-  }
-
-  &--confirm {
-    @include font-body-1-bold;
-    background: $ultramarine-ui-light;
-    border: none;
-    border-radius: 4px;
-    color: $color-white;
-    margin-left: 12px;
-    outline: none;
-    padding: 7px 14px;
-
-    @include mouse-mode {
-      &:hover {
-        background: $ultramarine-brand-dark;
-      }
-    }
-
-    @include keyboard-mode {
-      &:focus {
-        box-shadow: 0px 0px 0px 2px $ultramarine-brand-dark;
-      }
-    }
-  }
-}
-
-/* Safety Number verification */
-
-.module-safety-number {
-  &__icon {
-    height: 1.25em;
-    width: 1.25em;
-    vertical-align: text-bottom;
-    display: inline-block;
-  }
-
-  &__verification-label {
-    margin: 10px 0;
-  }
-
-  &__icon--verified {
-    display: inline-block;
-    height: 1.25em;
-    margin-right: 4px;
-    vertical-align: text-bottom;
-    width: 1.25em;
-
-    @include light-theme {
-      -webkit-mask: url('../images/icons/v2/check-24.svg') no-repeat center;
-      -webkit-mask-size: 100%;
-      background-color: #121212;
-    }
-
-    @include dark-theme {
-      -webkit-mask: url('../images/icons/v2/check-24.svg') no-repeat center;
-      -webkit-mask-size: 100%;
-      background-color: #f6f6f6;
-    }
-  }
-
-  &__icon--shield {
-    display: inline-block;
-    height: 1.25em;
-    margin-right: 4px;
-    vertical-align: text-bottom;
-    width: 1.25em;
-
-    @include light-theme {
-      -webkit-mask: url('../images/icons/v2/safety-number-outline-24.svg')
-        no-repeat center;
-      -webkit-mask-size: 100%;
-      background-color: #121212;
-    }
-
-    @include dark-theme {
-      -webkit-mask: url('../images/icons/v2/safety-number-solid-24.svg')
-        no-repeat center;
-      -webkit-mask-size: 100%;
-      background-color: #f6f6f6;
-    }
-  }
-
-  &__verify-container {
-    text-align: center;
-  }
-
-  &__button--verify {
-    border-radius: 5px;
-    font-weight: bold;
-    margin: 0;
-    outline: none;
-    padding: 10px;
-  }
-
-  &__number {
-    background: #f6f6f6;
-    border-radius: 5px;
-    border: solid 1px #dedede;
-    font-family: monospace;
-    margin: 20px auto 20px auto;
-    padding: 10px;
-    text-align: center;
-    width: 16em;
-
-    @include dark-theme {
-      background: #1b1b1b;
-      border: solid 1px #848484;
-      color: #f6f6f6;
-    }
-  }
-
-  &__verification-status {
-    margin: 30px 0 10px;
-    text-align: center;
-  }
-
-  &__close-button {
-    display: flex;
-    justify-content: flex-end;
-
-    button {
-      background: inherit;
-      border: none;
-      cursor: pointer;
-      padding: 0;
-
-      @include keyboard-mode {
-        &:focus {
-          border: 1px solid $ultramarine-ui-light;
-        }
-      }
-
-      span {
-        display: inline-block;
-        height: 24px;
-        width: 24px;
-
-        @include light-theme {
-          @include color-svg('../images/icons/v2/x-24.svg', $color-gray-60);
-        }
-        @include dark-theme {
-          @include color-svg('../images/icons/v2/x-24.svg', $color-gray-05);
-        }
-      }
     }
   }
 }
@@ -8867,112 +8355,6 @@ button.module-image__border-overlay:focus {
 
         @include dark-theme {
           @include color-svg('../images/icons/v2/x-24.svg', $color-gray-05);
-        }
-      }
-    }
-  }
-}
-
-// Module: confirmation dialog
-.module-confirmation-dialog {
-  &__overlay {
-    background: $color-black-alpha-40;
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    // THIS Z-INDEX IS OVER NINE THOUSAND. OVER NINE THOUSAND?! THAT CAN'T BE!
-    z-index: 9001;
-  }
-
-  &__container {
-    width: 360px;
-    padding: 12px 16px;
-    border-radius: 8px;
-    @include popper-shadow();
-
-    @include light-theme() {
-      background: $color-white;
-      color: $color-gray-90;
-    }
-
-    @include dark-theme() {
-      background: $color-gray-80;
-      color: $color-gray-05;
-    }
-
-    &__title {
-      @include font-body-1-bold;
-    }
-
-    &__content {
-      @include font-body-1;
-    }
-
-    &__buttons {
-      margin-top: 22px;
-
-      display: flex;
-      flex-direction: row;
-      justify-content: flex-end;
-
-      &__button {
-        margin-left: 4px;
-        border-radius: 17px;
-        height: 34px;
-        padding: 5px 12px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-
-        @include font-body-1-bold;
-
-        @include mouse-mode {
-          outline: none;
-        }
-
-        @include light-theme() {
-          background: $color-white;
-          color: $color-gray-60;
-          border: 1px solid $color-gray-60;
-        }
-
-        @include dark-theme() {
-          background: $color-gray-75;
-          color: $color-gray-25;
-          border: 1px solid $color-gray-25;
-        }
-
-        &--negative {
-          @include light-theme() {
-            border: none;
-            background: $color-accent-red;
-            color: $color-white;
-          }
-
-          @include dark-theme() {
-            border: none;
-            background: $color-accent-red;
-            color: $color-white;
-          }
-        }
-
-        &--affirmative {
-          @include light-theme() {
-            border: none;
-            background: $color-accent-green;
-            color: $color-white;
-          }
-
-          @include dark-theme() {
-            border: none;
-            background: $color-accent-green;
-            color: $color-white;
-          }
         }
       }
     }
@@ -9946,6 +9328,7 @@ button.module-image__border-overlay:focus {
 
 .module-avatar-popup {
   min-width: 240px;
+  max-width: $left-pane-width;
 
   border-radius: 4px;
   padding-bottom: 4px;
@@ -9974,6 +9357,7 @@ button.module-image__border-overlay:focus {
 
 .module-avatar-popup__profile__text {
   margin-left: 10px;
+  overflow: hidden;
 }
 
 .module-avatar-popup__profile__name {
@@ -9988,6 +9372,13 @@ button.module-image__border-overlay:focus {
   @include dark-theme {
     color: $color-gray-25;
   }
+}
+
+.module-avatar-popup__profile__name,
+.module-avatar-popup__profile__number {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .module-avatar-popup__divider {
@@ -11442,6 +10833,23 @@ $contact-modal-padding: 18px;
     }
   }
 
+  &__forward-message::before {
+    transform: scaleX(-1);
+    @include light-theme {
+      @include color-svg(
+        '../images/icons/v2/reply-outline-24.svg',
+        $color-black
+      );
+    }
+
+    @include dark-theme {
+      @include color-svg(
+        '../images/icons/v2/reply-solid-24.svg',
+        $color-gray-15
+      );
+    }
+  }
+
   &__delete-message::before {
     @include light-theme {
       @include color-svg(
@@ -11475,16 +10883,16 @@ $contact-modal-padding: 18px;
   }
 }
 
-/* Spec: container < 437px */
-@media (min-width: 0px) and (max-width: 799px) {
+/* Spec: container < 515px */
+@media (min-width: 0px) and (max-width: 834px) {
   .module-message {
     // Add 2px for 1px border
     max-width: 302px;
   }
 }
 
-/* Spec: container > 438px and container < 593px */
-@media (min-width: 800px) and (max-width: 925px) {
+/* Spec: container > 514px and container < 606px */
+@media (min-width: 835px) and (max-width: 925px) {
   .module-message {
     // Add 2px for 1px border
     max-width: 376px;

@@ -19,6 +19,7 @@ import WebSocketResource, {
 } from './WebsocketResources';
 import { isMoreRecentThan, isOlderThan } from '../util/timestamp';
 import StringView from './StringView';
+import { ourProfileKeyService } from '../services/ourProfileKey';
 
 const ARCHIVE_AGE = 30 * 24 * 60 * 60 * 1000;
 const PREKEY_ROTATION_AGE = 24 * 60 * 60 * 1000;
@@ -654,7 +655,7 @@ export default class AccountManager extends EventTarget {
     await window.textsecure.storage.put('password', password);
     await window.textsecure.storage.put('registrationId', registrationId);
     if (profileKey) {
-      await window.textsecure.storage.put('profileKey', profileKey);
+      await ourProfileKeyService.set(profileKey);
     }
     if (userAgent) {
       await window.textsecure.storage.put('userAgent', userAgent);

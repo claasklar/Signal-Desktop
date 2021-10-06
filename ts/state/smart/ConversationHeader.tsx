@@ -106,6 +106,8 @@ const mapStateToProps = (state: StateType, ownProps: OwnProps) => {
       'title',
       'type',
       'groupVersion',
+      'sharedGroupNames',
+      'unblurredAvatarPath',
     ]),
     conversationTitle: state.conversations.selectedConversationTitle,
     isMissingMandatoryProfileSharing: Boolean(

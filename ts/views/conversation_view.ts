@@ -4,11 +4,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { AttachmentType } from '../types/Attachment';
-import { GroupV2PendingMemberType } from '../model-types.d';
-import { MediaItemType } from '../components/LightboxGallery';
-import { MessageType } from '../state/ducks/conversations';
 import { ConversationModel } from '../models/conversations';
+import { GroupV2PendingMemberType } from '../model-types.d';
+import { LinkPreviewType } from '../types/message/LinkPreviews';
+import { MediaItemType } from '../components/LightboxGallery';
 import { MessageModel } from '../models/messages';
+import { MessageType } from '../state/ducks/conversations';
 import { assert } from '../util/assert';
 
 type GetLinkPreviewImageResult = {
@@ -48,6 +49,8 @@ const {
   getAbsoluteAttachmentPath,
   getAbsoluteDraftPath,
   getAbsoluteTempPath,
+  loadPreviewData,
+  loadStickerData,
   openFileInFolder,
   readAttachmentData,
   readDraftData,
@@ -79,6 +82,18 @@ Whisper.BlockedToast = Whisper.ToastView.extend({
 Whisper.BlockedGroupToast = Whisper.ToastView.extend({
   render_attributes() {
     return { toastMessage: window.i18n('unblockGroupToSend') };
+  },
+});
+
+Whisper.CaptchaSolvedToast = Whisper.ToastView.extend({
+  render_attributes() {
+    return { toastMessage: window.i18n('verificationComplete') };
+  },
+});
+
+Whisper.CaptchaFailedToast = Whisper.ToastView.extend({
+  render_attributes() {
+    return { toastMessage: window.i18n('verificationFailed') };
   },
 });
 
@@ -231,6 +246,12 @@ Whisper.ReactionFailedToast = Whisper.ToastView.extend({
   },
   render_attributes() {
     return { toastMessage: window.i18n('Reactions--error') };
+  },
+});
+
+Whisper.DeleteForEveryoneFailedToast = Whisper.ToastView.extend({
+  render_attributes() {
+    return { toastMessage: window.i18n('deleteForEveryoneFailed') };
   },
 });
 
@@ -478,7 +499,10 @@ Whisper.ConversationView = Whisper.View.extend({
               : this.model.getTitle();
             searchInConversation(this.model.id, name);
           },
-          onSetMuteNotifications: (ms: number) => this.setMuteNotifications(ms),
+          onSetMuteNotifications: (ms: number) =>
+            this.model.setMuteExpiration(
+              ms >= Number.MAX_SAFE_INTEGER ? ms : Date.now() + ms
+            ),
           onSetPin: this.setPin.bind(this),
           // These are view only and don't update the Conversation model, so they
           //   need a manual update call.
@@ -608,7 +632,7 @@ Whisper.ConversationView = Whisper.View.extend({
       onEditorStateChange: (
         msg: string,
         bodyRanges: Array<typeof window.Whisper.BodyRangeType>,
-        caretLocation: number
+        caretLocation?: number
       ) => this.onEditorStateChange(msg, bodyRanges, caretLocation),
       onTextTooLong: () => this.showToast(Whisper.MessageBodyTooLongToast),
       onChooseAttachment: this.onChooseAttachment.bind(this),
@@ -774,6 +798,7 @@ Whisper.ConversationView = Whisper.View.extend({
     const showExpiredOutgoingTapToViewToast = () => {
       this.showToast(Whisper.TapToViewExpiredOutgoingToast);
     };
+    const showForwardMessageModal = this.showForwardMessageModal.bind(this);
 
     return {
       deleteMessage,
@@ -792,6 +817,7 @@ Whisper.ConversationView = Whisper.View.extend({
       showContactModal,
       showExpiredIncomingTapToViewToast,
       showExpiredOutgoingTapToViewToast,
+      showForwardMessageModal,
       showIdentity,
       showMessageDetail,
       showVisualAttachment,
@@ -973,6 +999,9 @@ Whisper.ConversationView = Whisper.View.extend({
         loadOlderMessages,
         markMessageRead,
         scrollToQuotedMessage,
+        unblurAvatar: () => {
+          this.model.unblurAvatar();
+        },
         updateSharedGroups: this.model.throttledUpdateSharedGroups,
       }),
     });
@@ -980,14 +1009,18 @@ Whisper.ConversationView = Whisper.View.extend({
     this.$('.timeline-placeholder').append(this.timelineView.el);
   },
 
-  showToast(ToastView: any, options: any) {
+  showToast(ToastView: any, options: any, element: Element) {
     const toast = new ToastView(options);
 
-    const lightboxEl = $('.module-lightbox');
-    if (lightboxEl.length > 0) {
-      toast.$el.appendTo(lightboxEl);
+    if (element) {
+      toast.$el.appendTo(element);
     } else {
-      toast.$el.appendTo(this.$el);
+      const lightboxEl = $('.module-lightbox');
+      if (lightboxEl.length > 0) {
+        toast.$el.appendTo(lightboxEl);
+      } else {
+        toast.$el.appendTo(this.$el);
+      }
     }
 
     toast.render();
@@ -1058,8 +1091,10 @@ Whisper.ConversationView = Whisper.View.extend({
     return finish;
   },
 
-  async loadAndScroll(messageId: any, options: any) {
-    const { disableScroll } = options || {};
+  async loadAndScroll(
+    messageId: string,
+    options?: { disableScroll?: boolean }
+  ) {
     const {
       messagesReset,
       setMessagesLoading,
@@ -1100,7 +1135,8 @@ Whisper.ConversationView = Whisper.View.extend({
 
       const cleaned = await this.cleanModels(all);
       this.model.messageCollection.reset(cleaned);
-      const scrollToMessageId = disableScroll ? undefined : messageId;
+      const scrollToMessageId =
+        options && options.disableScroll ? undefined : messageId;
 
       messagesReset(
         conversationId,
@@ -1116,12 +1152,17 @@ Whisper.ConversationView = Whisper.View.extend({
     }
   },
 
-  async loadNewestMessages(newestMessageId: any, setFocus: any) {
+  async loadNewestMessages(
+    newestMessageId: string | undefined,
+    setFocus: boolean | undefined
+  ): Promise<void> {
     const {
       messagesReset,
       setMessagesLoading,
     } = window.reduxActions.conversations;
-    const conversationId = this.model.id;
+    const { model }: { model: ConversationModel } = this;
+
+    const conversationId = model.id;
 
     setMessagesLoading(conversationId, true);
     const finish = this.setInProgressFetch();
@@ -1141,12 +1182,21 @@ Whisper.ConversationView = Whisper.View.extend({
 
         // If newest in-memory message is unread, scrolling down would mean going to
         //   the very bottom, not the oldest unread.
-        if (newestInMemoryMessage.isUnread()) {
+        if (newestInMemoryMessage && newestInMemoryMessage.isUnread()) {
           scrollToLatestUnread = false;
         }
       }
 
       const metrics = await getMessageMetricsForConversation(conversationId);
+
+      // If this is a message request that has not yet been accepted, we always show the
+      //   oldest messages, to ensure that the ConversationHero is shown. We don't want to
+      //   scroll directly to the oldest message, because that could scroll the hero off
+      //   the screen.
+      if (!newestMessageId && !model.getAccepted() && metrics.oldest) {
+        this.loadAndScroll(metrics.oldest.id, { disableScroll: true });
+        return;
+      }
 
       if (scrollToLatestUnread && metrics.oldestUnread) {
         this.loadAndScroll(metrics.oldestUnread.id, {
@@ -1161,7 +1211,12 @@ Whisper.ConversationView = Whisper.View.extend({
       });
 
       const cleaned = await this.cleanModels(messages);
-      this.model.messageCollection.reset(cleaned);
+      assert(
+        model.messageCollection,
+        'loadNewestMessages: model must have messageCollection'
+      );
+
+      model.messageCollection.reset(cleaned);
       const scrollToMessageId =
         setFocus && metrics.newest ? metrics.newest.id : undefined;
 
@@ -1173,7 +1228,7 @@ Whisper.ConversationView = Whisper.View.extend({
       const unboundedFetch = true;
       messagesReset(
         conversationId,
-        cleaned.map((model: any) => model.getReduxData()),
+        cleaned.map((messageModel: any) => messageModel.getReduxData()),
         metrics,
         scrollToMessageId,
         unboundedFetch
@@ -2139,6 +2194,195 @@ Whisper.ConversationView = Whisper.View.extend({
     await message.retrySend();
   },
 
+  showForwardMessageModal(messageId: string) {
+    const message = this.model.messageCollection.get(messageId);
+    if (!message) {
+      throw new Error(
+        `showForwardMessageModal: Did not find message for id ${messageId}`
+      );
+    }
+
+    const attachments = message.getAttachmentsForMessage();
+    this.forwardMessageModal = new Whisper.ReactWrapperView({
+      JSX: window.Signal.State.Roots.createForwardMessageModal(
+        window.reduxStore,
+        {
+          attachments,
+          doForwardMessage: async (
+            conversationIds: Array<string>,
+            messageBody?: string,
+            includedAttachments?: Array<AttachmentType>,
+            linkPreview?: LinkPreviewType
+          ) => {
+            const didForwardSuccessfully = await this.maybeForwardMessage(
+              message,
+              conversationIds,
+              messageBody,
+              includedAttachments,
+              linkPreview
+            );
+
+            if (didForwardSuccessfully) {
+              this.forwardMessageModal.remove();
+              this.forwardMessageModal = null;
+            }
+          },
+          isSticker: Boolean(message.get('sticker')),
+          messageBody: message.getRawText(),
+          onClose: () => {
+            this.forwardMessageModal.remove();
+            this.forwardMessageModal = null;
+            this.resetLinkPreview();
+          },
+          onEditorStateChange: (
+            messageText: string,
+            _: Array<typeof window.Whisper.BodyRangeType>,
+            caretLocation?: number
+          ) => {
+            if (!attachments.length) {
+              this.debouncedMaybeGrabLinkPreview(messageText, caretLocation);
+            }
+          },
+          onTextTooLong: () =>
+            this.showToast(
+              Whisper.MessageBodyTooLongToast,
+              {},
+              document.querySelector('.module-ForwardMessageModal')
+            ),
+        }
+      ),
+    });
+    this.forwardMessageModal.render();
+  },
+
+  async maybeForwardMessage(
+    message: MessageModel,
+    conversationIds: Array<string>,
+    messageBody?: string,
+    attachments?: Array<AttachmentType>,
+    linkPreview?: LinkPreviewType
+  ): Promise<boolean> {
+    const attachmentLookup = new Set();
+    if (attachments) {
+      attachments.forEach(attachment => {
+        attachmentLookup.add(
+          `${attachment.fileName}/${attachment.contentType}`
+        );
+      });
+    }
+
+    const conversations = conversationIds.map(id =>
+      window.ConversationController.get(id)
+    );
+
+    // Verify that all contacts that we're forwarding
+    // to are verified and trusted
+    const unverifiedContacts: Array<ConversationModel> = [];
+    const untrustedContacts: Array<ConversationModel> = [];
+    await Promise.all(
+      conversations.map(async conversation => {
+        if (conversation) {
+          await conversation.updateVerified();
+          const unverifieds = conversation.getUnverified();
+          if (unverifieds.length) {
+            unverifieds.forEach(unverifiedConversation =>
+              unverifiedContacts.push(unverifiedConversation)
+            );
+          }
+
+          const untrusted = conversation.getUntrusted();
+          if (untrusted.length) {
+            untrusted.forEach(untrustedConversation =>
+              untrustedContacts.push(untrustedConversation)
+            );
+          }
+        }
+      })
+    );
+
+    // If there are any unverified or untrusted contacts, show the
+    // SendAnywayDialog and if we're fine with sending then mark all as
+    // verified and trusted and continue the send.
+    const iffyConversations = [...unverifiedContacts, ...untrustedContacts];
+    if (iffyConversations.length) {
+      const forwardMessageModal = document.querySelector<HTMLElement>(
+        '.module-ForwardMessageModal'
+      );
+      if (forwardMessageModal) {
+        forwardMessageModal.style.display = 'none';
+      }
+      const sendAnyway = await this.showSendAnywayDialog(iffyConversations);
+
+      if (!sendAnyway) {
+        if (forwardMessageModal) {
+          forwardMessageModal.style.display = 'block';
+        }
+        return false;
+      }
+
+      let verifyPromise: Promise<void> | undefined;
+      let approvePromise: Promise<void> | undefined;
+      if (unverifiedContacts.length) {
+        verifyPromise = this.markAllAsVerifiedDefault(unverifiedContacts);
+      }
+      if (untrustedContacts.length) {
+        approvePromise = this.markAllAsApproved(untrustedContacts);
+      }
+      await Promise.all([verifyPromise, approvePromise]);
+    }
+
+    const sendMessageOptions = { dontClearDraft: true };
+
+    // Actually send the message
+    // load any sticker data, attachments, or link previews that we need to
+    // send along with the message and do the send to each conversation.
+    await Promise.all(
+      conversations.map(async conversation => {
+        if (conversation) {
+          const sticker = message.get('sticker');
+          if (sticker) {
+            const stickerWithData = await loadStickerData(sticker);
+            conversation.sendMessage(
+              null,
+              [],
+              null,
+              [],
+              stickerWithData,
+              undefined,
+              sendMessageOptions
+            );
+          } else {
+            const preview = linkPreview
+              ? await loadPreviewData([linkPreview])
+              : [];
+            const allAttachments = message.getAttachmentsForMessage();
+            const attachmentsToSend = allAttachments.filter(
+              (attachment: Partial<AttachmentType>) =>
+                attachmentLookup.has(
+                  `${attachment.fileName}/${attachment.contentType}`
+                )
+            );
+
+            conversation.sendMessage(
+              messageBody || null,
+              attachmentsToSend,
+              null, // quote
+              preview,
+              null, // sticker
+              undefined, // BodyRanges
+              sendMessageOptions
+            );
+          }
+        }
+      })
+    );
+
+    // Cancel any link still pending, even if it didn't make it into the message
+    this.resetLinkPreview();
+
+    return true;
+  },
+
   async showAllMedia() {
     // We fetch more documents than media as they don’t require to be loaded
     // into memory right away. Revisit this once we have infinite scrolling:
@@ -2556,7 +2800,16 @@ Whisper.ConversationView = Whisper.View.extend({
       message: window.i18n('deleteForEveryoneWarning'),
       okText: window.i18n('delete'),
       resolve: async () => {
-        await this.model.sendDeleteForEveryoneMessage(message.get('sent_at'));
+        try {
+          await this.model.sendDeleteForEveryoneMessage(message.get('sent_at'));
+        } catch (error) {
+          window.log.error(
+            'Error sending delete-for-everyone',
+            error,
+            messageId
+          );
+          this.showToast(Whisper.DeleteForEveryoneFailedToast);
+        }
         this.resetPanel();
       },
     });
@@ -2868,22 +3121,19 @@ Whisper.ConversationView = Whisper.View.extend({
     // these methods are used in more than one place and should probably be
     // dried up and hoisted to methods on ConversationView
 
-    const onDelete = () => {
+    const onLeave = () => {
       this.longRunningTaskWrapper({
-        name: 'onDelete',
-        task: this.model.syncMessageRequestResponse.bind(
-          this.model,
-          messageRequestEnum.DELETE
-        ),
+        name: 'onLeave',
+        task: () => this.model.leaveGroupV2(),
       });
     };
 
-    const onBlockAndDelete = () => {
+    const onBlock = () => {
       this.longRunningTaskWrapper({
-        name: 'onBlockAndDelete',
+        name: 'onBlock',
         task: this.model.syncMessageRequestResponse.bind(
           this.model,
-          messageRequestEnum.BLOCK_AND_DELETE
+          messageRequestEnum.BLOCK
         ),
       });
     };
@@ -2911,8 +3161,8 @@ Whisper.ConversationView = Whisper.View.extend({
       updateGroupAttributes: conversation.updateGroupAttributesV2.bind(
         conversation
       ),
-      onDelete,
-      onBlockAndDelete,
+      onLeave,
+      onBlock,
     };
 
     const view = new Whisper.ReactWrapperView({
@@ -3165,31 +3415,6 @@ Whisper.ConversationView = Whisper.View.extend({
     });
   },
 
-  setMuteNotifications(ms: number) {
-    const muteExpiresAt = ms > 0 ? Date.now() + ms : undefined;
-
-    if (muteExpiresAt) {
-      // we use a timeoutId here so that we can reference the mute that was
-      // potentially set in the ConversationController. Specifically for a
-      // scenario where a conversation is already muted and we boot up the app,
-      // a timeout will be already set. But if we change the mute to a later
-      // date a new timeout would need to be set and the old one cleared. With
-      // this ID we can reference the existing timeout.
-      const timeoutId = this.model.getMuteTimeoutId();
-      window.Signal.Services.removeTimeout(timeoutId);
-      window.Signal.Services.onTimeout(
-        muteExpiresAt,
-        () => {
-          this.setMuteNotifications(0);
-        },
-        timeoutId
-      );
-    }
-
-    this.model.set({ muteExpiresAt });
-    this.saveModel();
-  },
-
   async destroyMessages() {
     window.showConfirmationDialog({
       message: window.i18n('deleteConversationConfirmation'),
@@ -3228,7 +3453,10 @@ Whisper.ConversationView = Whisper.View.extend({
     return true;
   },
 
-  showSendAnywayDialog(contacts: any, confirmText: any) {
+  showSendAnywayDialog(
+    contacts: Array<ConversationModel>,
+    confirmText?: string
+  ) {
     return new Promise(resolve => {
       const dialog = new Whisper.SafetyNumberChangeDialogView({
         confirmText,
@@ -3250,9 +3478,13 @@ Whisper.ConversationView = Whisper.View.extend({
       ? await getMessageById(messageId, {
           Message: Whisper.Message,
         })
-      : null;
+      : undefined;
 
     try {
+      if (!messageModel) {
+        throw new Error('Message not found');
+      }
+
       await this.model.sendReactionMessage(reaction, {
         targetAuthorUuid: messageModel.getSourceUuid(),
         targetTimestamp: messageModel.get('sent_at'),
@@ -3274,13 +3506,6 @@ Whisper.ConversationView = Whisper.View.extend({
         }
 
         return;
-      }
-
-      const mandatoryProfileSharingEnabled = window.Signal.RemoteConfig.isEnabled(
-        'desktop.mandatoryProfileSharing'
-      );
-      if (mandatoryProfileSharingEnabled && !this.model.get('profileSharing')) {
-        this.model.set({ profileSharing: true });
       }
 
       if (this.showInvalidMessageToast()) {
@@ -3332,7 +3557,7 @@ Whisper.ConversationView = Whisper.View.extend({
       ? await getMessageById(messageId, {
           Message: Whisper.Message,
         })
-      : null;
+      : undefined;
 
     if (model && !model.canReply()) {
       return;
@@ -3495,13 +3720,6 @@ Whisper.ConversationView = Whisper.View.extend({
         return;
       }
 
-      const mandatoryProfileSharingEnabled = window.Signal.RemoteConfig.isEnabled(
-        'desktop.mandatoryProfileSharing'
-      );
-      if (mandatoryProfileSharingEnabled && !this.model.get('profileSharing')) {
-        this.model.set({ profileSharing: true });
-      }
-
       const attachments = await this.getFiles();
       const sendDelta = Date.now() - this.sendStart;
       window.log.info('Send pre-checks took', sendDelta, 'milliseconds');
@@ -3628,6 +3846,7 @@ Whisper.ConversationView = Whisper.View.extend({
         URL.revokeObjectURL(item.url);
       }
     });
+    window.reduxActions.linkPreviews.removeLinkPreview();
     this.preview = null;
     this.currentlyMatchedLink = null;
     this.linkPreviewAbortController?.abort();
@@ -3902,6 +4121,7 @@ Whisper.ConversationView = Whisper.View.extend({
         URL.revokeObjectURL(item.url);
       }
     });
+    window.reduxActions.linkPreviews.removeLinkPreview();
     this.preview = null;
 
     // Cancel other in-flight link preview requests.
@@ -3958,6 +4178,7 @@ Whisper.ConversationView = Whisper.View.extend({
         return;
       }
 
+      window.reduxActions.linkPreviews.addLinkPreview(result);
       this.preview = [result];
       this.renderLinkPreview();
     } catch (error) {
@@ -3973,6 +4194,9 @@ Whisper.ConversationView = Whisper.View.extend({
   },
 
   renderLinkPreview() {
+    if (this.forwardMessageModal) {
+      return;
+    }
     if (this.previewView) {
       this.previewView.remove();
       this.previewView = null;

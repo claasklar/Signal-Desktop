@@ -5,6 +5,10 @@ import { omit, reject } from 'lodash';
 
 import { normalize } from '../../types/PhoneNumber';
 import { cleanSearchTerm } from '../../util/cleanSearchTerm';
+import {
+  ClientSearchResultMessageType,
+  ClientInterface,
+} from '../../sql/Interface';
 import dataInterface from '../../sql/Client';
 import { makeLookup } from '../../util/makeLookup';
 import { BodyRangesType } from '../../types/Util';
@@ -23,7 +27,7 @@ const {
   searchConversations: dataSearchConversations,
   searchMessages: dataSearchMessages,
   searchMessagesInConversation,
-} = dataInterface;
+}: ClientInterface = dataInterface;
 
 // State
 
@@ -244,9 +248,15 @@ function updateSearchTerm(query: string): UpdateSearchTermActionType {
   };
 }
 
-async function queryMessages(query: string, searchConversationId?: string) {
+async function queryMessages(
+  query: string,
+  searchConversationId?: string
+): Promise<Array<ClientSearchResultMessageType>> {
   try {
     const normalized = cleanSearchTerm(query);
+    if (normalized.length === 0) {
+      return [];
+    }
 
     if (searchConversationId) {
       return searchMessagesInConversation(normalized, searchConversationId);
@@ -348,7 +358,7 @@ export function reducer(
     const { payload } = action;
     const { query } = payload;
 
-    const hasQuery = Boolean(query && query.length >= 2);
+    const hasQuery = Boolean(query);
     const isWithinConversation = Boolean(state.searchConversationId);
 
     return {

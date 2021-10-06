@@ -5,7 +5,7 @@ import React from 'react';
 import classNames from 'classnames';
 
 import { LocalizerType } from '../../../types/Util';
-import { ConfirmationModal } from '../../ConfirmationModal';
+import { ConfirmationDialog } from '../../ConfirmationDialog';
 import { Tooltip, TooltipPlacement } from '../../Tooltip';
 
 import { PanelRow } from './PanelRow';
@@ -15,16 +15,16 @@ import { ConversationDetailsIcon } from './ConversationDetailsIcon';
 export type Props = {
   cannotLeaveBecauseYouAreLastAdmin: boolean;
   conversationTitle: string;
-  onBlockAndDelete: () => void;
-  onDelete: () => void;
+  onBlock: () => void;
+  onLeave: () => void;
   i18n: LocalizerType;
 };
 
 export const ConversationDetailsActions: React.ComponentType<Props> = ({
   cannotLeaveBecauseYouAreLastAdmin,
   conversationTitle,
-  onBlockAndDelete,
-  onDelete,
+  onBlock,
+  onLeave,
   i18n,
 }) => {
   const [confirmingLeave, setConfirmingLeave] = React.useState<boolean>(false);
@@ -88,13 +88,13 @@ export const ConversationDetailsActions: React.ComponentType<Props> = ({
       </PanelSection>
 
       {confirmingLeave && (
-        <ConfirmationModal
+        <ConfirmationDialog
           actions={[
             {
               text: i18n(
                 'ConversationDetailsActions--leave-group-modal-confirm'
               ),
-              action: onDelete,
+              action: onLeave,
               style: 'affirmative',
             },
           ]}
@@ -103,17 +103,17 @@ export const ConversationDetailsActions: React.ComponentType<Props> = ({
           title={i18n('ConversationDetailsActions--leave-group-modal-title')}
         >
           {i18n('ConversationDetailsActions--leave-group-modal-content')}
-        </ConfirmationModal>
+        </ConfirmationDialog>
       )}
 
       {confirmingBlock && (
-        <ConfirmationModal
+        <ConfirmationDialog
           actions={[
             {
               text: i18n(
                 'ConversationDetailsActions--block-group-modal-confirm'
               ),
-              action: onBlockAndDelete,
+              action: onBlock,
               style: 'affirmative',
             },
           ]}
@@ -124,7 +124,7 @@ export const ConversationDetailsActions: React.ComponentType<Props> = ({
           ])}
         >
           {i18n('ConversationDetailsActions--block-group-modal-content')}
-        </ConfirmationModal>
+        </ConfirmationDialog>
       )}
     </>
   );

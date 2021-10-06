@@ -23,13 +23,11 @@ import {
   OutgoingIdentityKeyError,
   OutgoingMessageError,
   SendMessageNetworkError,
+  SendMessageChallengeError,
   UnregisteredUserError,
 } from './Errors';
 import { isValidNumber } from '../types/PhoneNumber';
-import {
-  SecretSessionCipher,
-  SerializedCertificateType,
-} from '../metadata/SecretSessionCipher';
+import { SecretSessionCipher } from '../metadata/SecretSessionCipher';
 
 type OutgoingMessageOptionsType = SendOptionsType & {
   online?: boolean;
@@ -61,8 +59,6 @@ export default class OutgoingMessage {
   unidentifiedDeliveries: Array<unknown>;
 
   sendMetadata?: SendMetadataType;
-
-  senderCertificate?: SerializedCertificateType;
 
   online?: boolean;
 
@@ -96,9 +92,8 @@ export default class OutgoingMessage {
     this.failoverIdentifiers = [];
     this.unidentifiedDeliveries = [];
 
-    const { sendMetadata, senderCertificate, online } = options;
+    const { sendMetadata, online } = options;
     this.sendMetadata = sendMetadata;
-    this.senderCertificate = senderCertificate;
     this.online = online;
   }
 
@@ -122,12 +117,16 @@ export default class OutgoingMessage {
     let error = providedError;
 
     if (!error || (error.name === 'HTTPError' && error.code !== 404)) {
-      error = new OutgoingMessageError(
-        identifier,
-        this.message.toArrayBuffer(),
-        this.timestamp,
-        error
-      );
+      if (error && error.code === 428) {
+        error = new SendMessageChallengeError(identifier, error);
+      } else {
+        error = new OutgoingMessageError(
+          identifier,
+          this.message.toArrayBuffer(),
+          this.timestamp,
+          error
+        );
+      }
     }
 
     error.reason = reason;
@@ -297,9 +296,13 @@ export default class OutgoingMessage {
       if (e.name === 'HTTPError' && e.code !== 409 && e.code !== 410) {
         // 409 and 410 should bubble and be handled by doSendMessage
         // 404 should throw UnregisteredUserError
+        // 428 should throw SendMessageChallengeError
         // all other network errors can be retried later.
         if (e.code === 404) {
           throw new UnregisteredUserError(identifier, e);
+        }
+        if (e.code === 428) {
+          throw new SendMessageChallengeError(identifier, e);
         }
         throw new SendMessageNetworkError(identifier, jsonData, e);
       }
@@ -344,12 +347,8 @@ export default class OutgoingMessage {
     } = {};
     const plaintext = this.getPlaintext();
 
-    const { sendMetadata, senderCertificate } = this;
-    const info =
-      sendMetadata && sendMetadata[identifier]
-        ? sendMetadata[identifier]
-        : { accessKey: undefined };
-    const { accessKey } = info;
+    const { sendMetadata } = this;
+    const { accessKey, senderCertificate } = sendMetadata?.[identifier] || {};
 
     if (accessKey && !senderCertificate) {
       window.log.warn(
@@ -442,8 +441,8 @@ export default class OutgoingMessage {
                 }
 
                 // This ensures that we don't hit this codepath the next time through
-                if (info) {
-                  info.accessKey = undefined;
+                if (sendMetadata) {
+                  delete sendMetadata[identifier];
                 }
 
                 return this.doSendMessage(identifier, deviceIds, recurse);

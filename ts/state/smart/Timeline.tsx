@@ -63,12 +63,14 @@ function renderLastSeenIndicator(id: string): JSX.Element {
 function renderHeroRow(
   id: string,
   onHeightChange: () => unknown,
+  unblurAvatar: () => void,
   updateSharedGroups: () => unknown
 ): JSX.Element {
   return (
     <FilteredSmartHeroRow
       id={id}
       onHeightChange={onHeightChange}
+      unblurAvatar={unblurAvatar}
       updateSharedGroups={updateSharedGroups}
     />
   );
@@ -94,6 +96,10 @@ const mapStateToProps = (state: StateType, props: ExternalProps) => {
       'typingContact',
       'isGroupV1AndDisabled',
     ]),
+    isIncomingMessageRequest: Boolean(
+      conversation.messageRequestsEnabled &&
+        !conversation.acceptedMessageRequest
+    ),
     ...conversationMessages,
     invitedContactsForNewlyCreatedGroup: getInvitedContactsForNewlyCreatedGroup(
       state
