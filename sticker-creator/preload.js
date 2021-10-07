@@ -43,7 +43,7 @@ window.localeMessages = ipc.sendSync('locale-data');
 
 require('../ts/logging/set_up_renderer_logging').initialize();
 
-require('../ts/LibSignalStore');
+require('../ts/SignalProtocolStore');
 
 window.log.info('sticker-creator starting up...');
 
@@ -180,7 +180,7 @@ window.encryptAndUpload = async (
   cover,
   onProgress = noop
 ) => {
-  window.sqlInitializer.goBackToMainProcess();
+  await window.sqlInitializer.goBackToMainProcess();
   const usernameItem = await window.Signal.Data.getItemById('uuid_id');
   const oldUsernameItem = await window.Signal.Data.getItemById('number_id');
   const passwordItem = await window.Signal.Data.getItemById('password');
@@ -202,9 +202,9 @@ window.encryptAndUpload = async (
   const { value: oldUsername } = oldUsernameItem;
   const { value: password } = passwordItem;
 
-  const packKey = window.libsignal.crypto.getRandomBytes(32);
+  const packKey = window.Signal.Crypto.getRandomBytes(32);
   const encryptionKey = await deriveStickerPackKey(packKey);
-  const iv = window.libsignal.crypto.getRandomBytes(16);
+  const iv = window.Signal.Crypto.getRandomBytes(16);
 
   const server = WebAPI.connect({
     username: username || oldUsername,
@@ -239,7 +239,7 @@ window.encryptAndUpload = async (
   );
   const encryptedStickers = await pMap(
     uniqueStickers,
-    ({ imageData }) => encrypt(imageData.buffer, encryptionKey, iv),
+    ({ imageData }) => encrypt(imageData, encryptionKey, iv),
     {
       concurrency: 3,
       timeout: 1000 * 60 * 2,

@@ -14,6 +14,7 @@ import { Spinner } from '../Spinner';
 import { MessageBody } from './MessageBody';
 import { ExpireTimer } from './ExpireTimer';
 import { ImageGrid } from './ImageGrid';
+import { GIF } from './GIF';
 import { Image } from './Image';
 import { Timestamp } from './Timestamp';
 import { ContactName } from './ContactName';
@@ -42,6 +43,7 @@ import {
   isImage,
   isImageAttachment,
   isVideo,
+  isGIF,
 } from '../../types/Attachment';
 import { ContactType } from '../../types/Contact';
 
@@ -58,6 +60,7 @@ type Trigger = {
 };
 
 const STICKER_SIZE = 200;
+const GIF_SIZE = 300;
 const SELECTED_TIMEOUT = 1000;
 const THREE_HOURS = 3 * 60 * 60 * 1000;
 
@@ -121,6 +124,7 @@ export type PropsData = {
     | 'title'
     | 'unblurredAvatarPath'
   >;
+  reducedMotion?: boolean;
   conversationType: ConversationTypesType;
   attachments?: Array<AttachmentType>;
   quote?: {
@@ -245,16 +249,14 @@ type State = {
 const EXPIRATION_CHECK_MINIMUM = 2000;
 const EXPIRED_DELAY = 600;
 
-export class Message extends React.PureComponent<Props, State> {
+export class Message extends React.Component<Props, State> {
   public menuTriggerRef: Trigger | undefined;
 
   public focusRef: React.RefObject<HTMLDivElement> = React.createRef();
 
   public audioButtonRef: React.RefObject<HTMLButtonElement> = React.createRef();
 
-  public reactionsContainerRef: React.RefObject<
-    HTMLDivElement
-  > = React.createRef();
+  public reactionsContainerRef: React.RefObject<HTMLDivElement> = React.createRef();
 
   public reactionsContainerRefMerger = createRefMerger();
 
@@ -711,6 +713,7 @@ export class Message extends React.PureComponent<Props, State> {
       isSticker,
       text,
       theme,
+      reducedMotion,
 
       renderAudioAttachment,
     } = this.props;
@@ -729,52 +732,72 @@ export class Message extends React.PureComponent<Props, State> {
       (conversationType === 'group' && direction === 'incoming');
     const displayImage = canDisplayImage(attachments);
 
-    if (
-      displayImage &&
-      !imageBroken &&
-      (isImage(attachments) || isVideo(attachments))
-    ) {
+    if (displayImage && !imageBroken) {
       const prefix = isSticker ? 'sticker' : 'attachment';
-      const bottomOverlay = !isSticker && !collapseMetadata;
-      // We only want users to tab into this if there's more than one
-      const tabIndex = attachments.length > 1 ? 0 : -1;
-
-      return (
-        <div
-          className={classNames(
-            `module-message__${prefix}-container`,
-            withContentAbove
-              ? `module-message__${prefix}-container--with-content-above`
-              : null,
-            withContentBelow
-              ? 'module-message__attachment-container--with-content-below'
-              : null,
-            isSticker && !collapseMetadata
-              ? 'module-message__sticker-container--with-content-below'
-              : null
-          )}
-        >
-          <ImageGrid
-            attachments={attachments}
-            withContentAbove={isSticker || withContentAbove}
-            withContentBelow={isSticker || withContentBelow}
-            isSticker={isSticker}
-            stickerSize={STICKER_SIZE}
-            bottomOverlay={bottomOverlay}
-            i18n={i18n}
-            theme={theme}
-            onError={this.handleImageError}
-            tabIndex={tabIndex}
-            onClick={attachment => {
-              if (hasNotDownloaded(attachment)) {
-                kickOffAttachmentDownload({ attachment, messageId: id });
-              } else {
-                showVisualAttachment({ attachment, messageId: id });
-              }
-            }}
-          />
-        </div>
+      const containerClassName = classNames(
+        `module-message__${prefix}-container`,
+        withContentAbove
+          ? `module-message__${prefix}-container--with-content-above`
+          : null,
+        withContentBelow
+          ? 'module-message__attachment-container--with-content-below'
+          : null,
+        isSticker && !collapseMetadata
+          ? 'module-message__sticker-container--with-content-below'
+          : null
       );
+
+      if (isGIF(attachments)) {
+        return (
+          <div className={containerClassName}>
+            <GIF
+              attachment={firstAttachment}
+              size={GIF_SIZE}
+              theme={theme}
+              i18n={i18n}
+              tabIndex={0}
+              reducedMotion={reducedMotion}
+              onError={this.handleImageError}
+              kickOffAttachmentDownload={() => {
+                kickOffAttachmentDownload({
+                  attachment: firstAttachment,
+                  messageId: id,
+                });
+              }}
+            />
+          </div>
+        );
+      }
+
+      if (isImage(attachments) || isVideo(attachments)) {
+        const bottomOverlay = !isSticker && !collapseMetadata;
+        // We only want users to tab into this if there's more than one
+        const tabIndex = attachments.length > 1 ? 0 : -1;
+
+        return (
+          <div className={containerClassName}>
+            <ImageGrid
+              attachments={attachments}
+              withContentAbove={isSticker || withContentAbove}
+              withContentBelow={isSticker || withContentBelow}
+              isSticker={isSticker}
+              stickerSize={STICKER_SIZE}
+              bottomOverlay={bottomOverlay}
+              i18n={i18n}
+              theme={theme}
+              onError={this.handleImageError}
+              tabIndex={tabIndex}
+              onClick={attachment => {
+                if (hasNotDownloaded(attachment)) {
+                  kickOffAttachmentDownload({ attachment, messageId: id });
+                } else {
+                  showVisualAttachment({ attachment, messageId: id });
+                }
+              }}
+            />
+          </div>
+        );
+      }
     }
     if (isAudio(attachments)) {
       return renderAudioAttachment({
@@ -1583,6 +1606,11 @@ export class Message extends React.PureComponent<Props, State> {
     const { attachments, isSticker, previews } = this.props;
 
     if (attachments && attachments.length) {
+      if (isGIF(attachments)) {
+        // Message container border + image border
+        return GIF_SIZE + 4;
+      }
+
       if (isSticker) {
         // Padding is 8px, on both sides, plus two for 1px border
         return STICKER_SIZE + 8 * 2 + 2;
@@ -2039,6 +2067,11 @@ export class Message extends React.PureComponent<Props, State> {
 
     const isAttachmentPending = this.isAttachmentPending();
 
+    // Don't show lightbox for GIFs
+    if (isGIF(attachments)) {
+      return;
+    }
+
     if (isTapToView) {
       if (isAttachmentPending) {
         return;
@@ -2216,6 +2249,7 @@ export class Message extends React.PureComponent<Props, State> {
 
   public renderContainer(): JSX.Element {
     const {
+      attachments,
       author,
       deletedForEveryone,
       direction,
@@ -2233,6 +2267,7 @@ export class Message extends React.PureComponent<Props, State> {
 
     const containerClassnames = classNames(
       'module-message__container',
+      isGIF(attachments) ? 'module-message__container--gif' : null,
       isSelected && !isSticker ? 'module-message__container--selected' : null,
       isSticker ? 'module-message__container--with-sticker' : null,
       !isSticker ? `module-message__container--${direction}` : null,

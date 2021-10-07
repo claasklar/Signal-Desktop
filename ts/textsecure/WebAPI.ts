@@ -39,11 +39,13 @@ import {
   concatenateBytes,
   constantTimeEqual,
   decryptAesGcm,
+  deriveSecrets,
   encryptCdsDiscoveryRequest,
   getBytes,
   getRandomValue,
   splitUuids,
 } from '../Crypto';
+import { calculateAgreement, generateKeyPair } from '../Curve';
 import * as linkPreviewFetch from '../linkPreviews/linkPreviewFetch';
 
 import {
@@ -2192,6 +2194,7 @@ export function initialize({
         auth.groupPublicParamsHex,
         auth.authCredentialPresentationHex
       );
+      const safeInviteLinkPassword = toWebSafeBase64(inviteLinkPassword);
 
       const response: ArrayBuffer = await _ajax({
         basicAuth,
@@ -2200,7 +2203,8 @@ export function initialize({
         host: storageUrl,
         httpType: 'GET',
         responseType: 'arraybuffer',
-        urlParameters: `/${toWebSafeBase64(inviteLinkPassword)}`,
+        urlParameters: `/${safeInviteLinkPassword}`,
+        redactUrl: _createRedactor(safeInviteLinkPassword),
       });
 
       return window.textsecure.protobuf.GroupJoinInfo.decode(response);
@@ -2216,6 +2220,9 @@ export function initialize({
         options.authCredentialPresentationHex
       );
       const data = changes.toArrayBuffer();
+      const safeInviteLinkPassword = inviteLinkBase64
+        ? toWebSafeBase64(inviteLinkBase64)
+        : undefined;
 
       const response: ArrayBuffer = await _ajax({
         basicAuth,
@@ -2225,8 +2232,11 @@ export function initialize({
         host: storageUrl,
         httpType: 'PATCH',
         responseType: 'arraybuffer',
-        urlParameters: inviteLinkBase64
-          ? `?inviteLinkPassword=${toWebSafeBase64(inviteLinkBase64)}`
+        urlParameters: safeInviteLinkPassword
+          ? `?inviteLinkPassword=${safeInviteLinkPassword}`
+          : undefined,
+        redactUrl: safeInviteLinkPassword
+          ? _createRedactor(safeInviteLinkPassword)
           : undefined,
       });
 
@@ -2512,7 +2522,7 @@ export function initialize({
       username: string;
       password: string;
     }) {
-      const keyPair = await window.libsignal.externalCurveAsync.generateKeyPair();
+      const keyPair = generateKeyPair();
       const { privKey, pubKey } = keyPair;
       // Remove first "key type" byte from public key
       const slicedPubKey = pubKey.slice(1);
@@ -2582,11 +2592,11 @@ export function initialize({
             );
 
             // Derive key
-            const ephemeralToEphemeral = await window.libsignal.externalCurveAsync.calculateAgreement(
+            const ephemeralToEphemeral = calculateAgreement(
               decoded.serverEphemeralPublic,
               privKey
             );
-            const ephemeralToStatic = await window.libsignal.externalCurveAsync.calculateAgreement(
+            const ephemeralToStatic = calculateAgreement(
               decoded.serverStaticPublic,
               privKey
             );
@@ -2599,10 +2609,7 @@ export function initialize({
               decoded.serverEphemeralPublic,
               decoded.serverStaticPublic
             );
-            const [
-              clientKey,
-              serverKey,
-            ] = await window.libsignal.HKDF.deriveSecrets(
+            const [clientKey, serverKey] = await deriveSecrets(
               masterSecret,
               publicKeys,
               new ArrayBuffer(0)

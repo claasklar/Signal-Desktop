@@ -5,9 +5,10 @@ import * as React from 'react';
 import { isBoolean } from 'lodash';
 
 import { action } from '@storybook/addon-actions';
-import { boolean, number, text } from '@storybook/addon-knobs';
+import { boolean, number, select, text } from '@storybook/addon-knobs';
 import { storiesOf } from '@storybook/react';
 
+import { SignalService } from '../../protobuf';
 import { Colors } from '../../types/Colors';
 import { EmojiPicker } from '../emoji/EmojiPicker';
 import { Message, Props, AudioAttachmentProps } from './Message';
@@ -69,7 +70,11 @@ const renderAudioAttachment: Props['renderAudioAttachment'] = props => (
 
 const createProps = (overrideProps: Partial<Props> = {}): Props => ({
   attachments: overrideProps.attachments,
-  author: overrideProps.author || getDefaultConversation(),
+  author: overrideProps.author || {
+    ...getDefaultConversation(),
+    color: select('authorColor', Colors, 'red'),
+  },
+  reducedMotion: boolean('reducedMotion', false),
   bodyRanges: overrideProps.bodyRanges,
   canReply: true,
   canDownload: true,
@@ -730,6 +735,63 @@ story.add('Image with Caption', () => {
   return renderBothDirections(props);
 });
 
+story.add('GIF', () => {
+  const props = createProps({
+    attachments: [
+      {
+        contentType: VIDEO_MP4,
+        flags: SignalService.AttachmentPointer.Flags.GIF,
+        fileName: 'cat-gif.mp4',
+        url: '/fixtures/cat-gif.mp4',
+        width: 400,
+        height: 332,
+      },
+    ],
+    status: 'sent',
+  });
+
+  return renderBothDirections(props);
+});
+
+story.add('Not Downloaded GIF', () => {
+  const props = createProps({
+    attachments: [
+      {
+        contentType: VIDEO_MP4,
+        flags: SignalService.AttachmentPointer.Flags.GIF,
+        fileName: 'cat-gif.mp4',
+        fileSize: 188610,
+        blurHash: 'LDA,FDBnm+I=p{tkIUI;~UkpELV]',
+        width: 400,
+        height: 332,
+      },
+    ],
+    status: 'sent',
+  });
+
+  return renderBothDirections(props);
+});
+
+story.add('Pending GIF', () => {
+  const props = createProps({
+    attachments: [
+      {
+        pending: true,
+        contentType: VIDEO_MP4,
+        flags: SignalService.AttachmentPointer.Flags.GIF,
+        fileName: 'cat-gif.mp4',
+        fileSize: 188610,
+        blurHash: 'LDA,FDBnm+I=p{tkIUI;~UkpELV]',
+        width: 400,
+        height: 332,
+      },
+    ],
+    status: 'sent',
+  });
+
+  return renderBothDirections(props);
+});
+
 story.add('Audio', () => {
   const props = createProps({
     attachments: [
@@ -737,6 +799,21 @@ story.add('Audio', () => {
         contentType: AUDIO_MP3,
         fileName: 'incompetech-com-Agnus-Dei-X.mp3',
         url: '/fixtures/incompetech-com-Agnus-Dei-X.mp3',
+      },
+    ],
+    status: 'sent',
+  });
+
+  return renderBothDirections(props);
+});
+
+story.add('Long Audio', () => {
+  const props = createProps({
+    attachments: [
+      {
+        contentType: AUDIO_MP3,
+        fileName: 'long-audio.mp3',
+        url: '/fixtures/long-audio.mp3',
       },
     ],
     status: 'sent',

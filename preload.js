@@ -11,7 +11,6 @@ let preloadEndTime = 0;
 try {
   const electron = require('electron');
   const semver = require('semver');
-  const client = require('libsignal-client');
   const _ = require('lodash');
   const { installGetter, installSetter } = require('./preload_utils');
   const {
@@ -69,6 +68,10 @@ try {
   window.getServerPublicParams = () => config.serverPublicParams;
   window.getSfuUrl = () => config.sfuUrl;
   window.isBehindProxy = () => Boolean(config.proxyUrl);
+  window.getAutoLaunch = () => app.getLoginItemSettings().openAtLogin;
+  window.setAutoLaunch = value => {
+    app.setLoginItemSettings({ openAtLogin: Boolean(value) });
+  };
 
   function setSystemTheme() {
     window.systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
@@ -143,6 +146,9 @@ try {
   window.showWindow = () => {
     window.log.info('show window');
     ipc.send('show-window');
+  };
+  window.setSecureInput = enabled => {
+    ipc.send('set-secure-input', enabled);
   };
 
   window.titleBarDoubleClick = () => {
@@ -262,6 +268,9 @@ try {
 
   installGetter('spell-check', 'getSpellCheck');
   installSetter('spell-check', 'setSpellCheck');
+
+  installGetter('auto-launch', 'getAutoLaunch');
+  installSetter('auto-launch', 'setAutoLaunch');
 
   installGetter('read-receipt-setting', 'getReadReceiptSetting');
   installSetter('read-receipt-setting', 'setReadReceiptSetting');
@@ -391,10 +400,16 @@ try {
   installGetter('sync-time', 'getLastSyncTime');
   installSetter('sync-time', 'setLastSyncTime');
 
-  ipc.on('delete-all-data', () => {
+  ipc.on('delete-all-data', async () => {
     const { deleteAllData } = window.Events;
-    if (deleteAllData) {
-      deleteAllData();
+    if (!deleteAllData) {
+      return;
+    }
+
+    try {
+      await deleteAllData();
+    } catch (error) {
+      window.log.error('delete-all-data: error', error && error.stack);
     }
   });
 
@@ -461,6 +476,7 @@ try {
 
   window.nodeSetImmediate = setImmediate;
 
+  window.Backbone = require('backbone');
   window.textsecure = require('./ts/textsecure').default;
   window.synchronousCrypto = require('./ts/util/synchronousCrypto');
 
@@ -511,6 +527,10 @@ try {
     activeWindowService
   );
 
+  window.Accessibility = {
+    reducedMotionSetting: Boolean(config.reducedMotionSetting),
+  };
+
   window.isValidGuid = maybeGuid =>
     /^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i.test(
       maybeGuid
@@ -541,7 +561,6 @@ try {
   window.ReactDOM = require('react-dom');
   window.moment = require('moment');
   window.PQueue = require('p-queue').default;
-  window.Backbone = require('backbone');
 
   const Signal = require('./js/modules/signal');
   const i18n = require('./js/modules/i18n');
@@ -583,127 +602,8 @@ try {
   require('./ts/backbone/views/whisper_view');
   require('./ts/backbone/views/toast_view');
   require('./ts/views/conversation_view');
-  require('./ts/LibSignalStore');
+  require('./ts/SignalProtocolStore');
   require('./ts/background');
-
-  function wrapWithPromise(fn) {
-    return (...args) => Promise.resolve(fn(...args));
-  }
-  const externalCurve = {
-    generateKeyPair: () => {
-      const privKey = client.PrivateKey.generate();
-      const pubKey = privKey.getPublicKey();
-
-      return {
-        privKey: privKey.serialize().buffer,
-        pubKey: pubKey.serialize().buffer,
-      };
-    },
-    createKeyPair: incomingKey => {
-      const incomingKeyBuffer = Buffer.from(incomingKey);
-
-      if (incomingKeyBuffer.length !== 32) {
-        throw new Error('key must be 32 bytes long');
-      }
-
-      // eslint-disable-next-line no-bitwise
-      incomingKeyBuffer[0] &= 248;
-      // eslint-disable-next-line no-bitwise
-      incomingKeyBuffer[31] &= 127;
-      // eslint-disable-next-line no-bitwise
-      incomingKeyBuffer[31] |= 64;
-
-      const privKey = client.PrivateKey.deserialize(incomingKeyBuffer);
-      const pubKey = privKey.getPublicKey();
-
-      return {
-        privKey: privKey.serialize().buffer,
-        pubKey: pubKey.serialize().buffer,
-      };
-    },
-    calculateAgreement: (pubKey, privKey) => {
-      const pubKeyBuffer = Buffer.from(pubKey);
-      const privKeyBuffer = Buffer.from(privKey);
-
-      const pubKeyObj = client.PublicKey.deserialize(
-        Buffer.concat([
-          Buffer.from([0x05]),
-          externalCurve.validatePubKeyFormat(pubKeyBuffer),
-        ])
-      );
-      const privKeyObj = client.PrivateKey.deserialize(privKeyBuffer);
-      const sharedSecret = privKeyObj.agree(pubKeyObj);
-      return sharedSecret.buffer;
-    },
-    verifySignature: (pubKey, message, signature) => {
-      const pubKeyBuffer = Buffer.from(pubKey);
-      const messageBuffer = Buffer.from(message);
-      const signatureBuffer = Buffer.from(signature);
-
-      const pubKeyObj = client.PublicKey.deserialize(pubKeyBuffer);
-      const result = !pubKeyObj.verify(messageBuffer, signatureBuffer);
-
-      return result;
-    },
-    calculateSignature: (privKey, message) => {
-      const privKeyBuffer = Buffer.from(privKey);
-      const messageBuffer = Buffer.from(message);
-
-      const privKeyObj = client.PrivateKey.deserialize(privKeyBuffer);
-      const signature = privKeyObj.sign(messageBuffer);
-      return signature.buffer;
-    },
-    validatePubKeyFormat: pubKey => {
-      if (
-        pubKey === undefined ||
-        ((pubKey.byteLength !== 33 || new Uint8Array(pubKey)[0] !== 5) &&
-          pubKey.byteLength !== 32)
-      ) {
-        throw new Error('Invalid public key');
-      }
-      if (pubKey.byteLength === 33) {
-        return pubKey.slice(1);
-      }
-
-      return pubKey;
-    },
-  };
-  externalCurve.ECDHE = externalCurve.calculateAgreement;
-  externalCurve.Ed25519Sign = externalCurve.calculateSignature;
-  externalCurve.Ed25519Verify = externalCurve.verifySignature;
-  const externalCurveAsync = {
-    generateKeyPair: wrapWithPromise(externalCurve.generateKeyPair),
-    createKeyPair: wrapWithPromise(externalCurve.createKeyPair),
-    calculateAgreement: wrapWithPromise(externalCurve.calculateAgreement),
-    verifySignature: async (...args) => {
-      // The async verifySignature function has a different signature than the
-      //   sync function
-      const verifyFailed = externalCurve.verifySignature(...args);
-      if (verifyFailed) {
-        throw new Error('Invalid signature');
-      }
-    },
-    calculateSignature: wrapWithPromise(externalCurve.calculateSignature),
-    validatePubKeyFormat: wrapWithPromise(externalCurve.validatePubKeyFormat),
-    ECDHE: wrapWithPromise(externalCurve.ECDHE),
-    Ed25519Sign: wrapWithPromise(externalCurve.Ed25519Sign),
-    Ed25519Verify: wrapWithPromise(externalCurve.Ed25519Verify),
-  };
-  window.libsignal = window.libsignal || {};
-  window.libsignal.externalCurve = externalCurve;
-  window.libsignal.externalCurveAsync = externalCurveAsync;
-
-  window.libsignal.HKDF = {};
-  window.libsignal.HKDF.deriveSecrets = (input, salt, info) => {
-    const hkdf = client.HKDF.new(3);
-    const output = hkdf.deriveSecrets(
-      3 * 32,
-      Buffer.from(input),
-      Buffer.from(info),
-      Buffer.from(salt)
-    );
-    return [output.slice(0, 32), output.slice(32, 64), output.slice(64, 96)];
-  };
 
   // Pulling these in separately since they access filesystem, electron
   window.Signal.Backup = require('./js/modules/backup');

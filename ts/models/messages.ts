@@ -21,13 +21,17 @@ import {
   MessageStatusType,
   PropsData,
 } from '../components/conversation/Message';
-import { OwnProps as SmartMessageDetailPropsType } from '../state/smart/MessageDetail';
+import {
+  OwnProps as SmartMessageDetailPropsType,
+  Contact as SmartMessageDetailContact,
+} from '../state/smart/MessageDetail';
 import { CallbackResultType } from '../textsecure/SendMessage';
 import * as expirationTimer from '../util/expirationTimer';
 import { missingCaseError } from '../util/missingCaseError';
 import { ColorType } from '../types/Colors';
 import { CallMode } from '../types/Calling';
 import { BodyRangesType } from '../types/Util';
+import { ReactionType } from '../types/Reactions';
 import { PropsDataType as GroupsV2Props } from '../components/conversation/GroupV2Change';
 import {
   PropsData as TimerNotificationProps,
@@ -50,6 +54,7 @@ import { AttachmentType, isImage, isVideo } from '../types/Attachment';
 import { MIMEType } from '../types/MIME';
 import { LinkPreviewType } from '../types/message/LinkPreviews';
 import { ourProfileKeyService } from '../services/ourProfileKey';
+import { markRead, setToExpire } from '../services/MessageUpdater';
 
 /* eslint-disable camelcase */
 /* eslint-disable more/no-then */
@@ -462,33 +467,51 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
 
       return window.ConversationController.getConversationId(identifier);
     });
-    const finalContacts = (conversationIds || []).map(id => {
-      const errorsForContact = errorsGroupedById[id];
-      const isOutgoingKeyError = Boolean(
-        _.find(errorsForContact, error => error.name === OUTGOING_KEY_ERROR)
-      );
-      const isUnidentifiedDelivery =
-        window.storage.get('unidentifiedDeliveryIndicators') &&
-        this.isUnidentifiedDelivery(id, unidentifiedLookup);
+    const finalContacts: Array<SmartMessageDetailContact> = (
+      conversationIds || []
+    ).map(
+      (id: string): SmartMessageDetailContact => {
+        const errorsForContact = errorsGroupedById[id];
+        const isOutgoingKeyError = Boolean(
+          _.find(errorsForContact, error => error.name === OUTGOING_KEY_ERROR)
+        );
+        const isUnidentifiedDelivery =
+          window.storage.get('unidentifiedDeliveryIndicators') &&
+          this.isUnidentifiedDelivery(id, unidentifiedLookup);
 
-      return {
-        ...this.findAndFormatContact(id),
+        return {
+          ...this.findAndFormatContact(id),
 
-        status: this.getStatus(id),
-        errors: errorsForContact,
-        isOutgoingKeyError,
-        isUnidentifiedDelivery,
-        onSendAnyway: () =>
-          this.trigger('force-send', { contactId: id, messageId: this.id }),
-        onShowSafetyNumber: () => this.trigger('show-identity', id),
-      };
-    });
-
+          status: this.getStatus(id),
+          errors: errorsForContact,
+          isOutgoingKeyError,
+          isUnidentifiedDelivery,
+          onSendAnyway: () =>
+            this.trigger('force-send', { contactId: id, messageId: this.id }),
+          onShowSafetyNumber: () => this.trigger('show-identity', id),
+        };
+      }
+    );
     // The prefix created here ensures that contacts with errors are listed
     //   first; otherwise it's alphabetical
-    const sortedContacts = _.sortBy(
-      finalContacts,
-      contact => `${contact.errors ? '0' : '1'}${contact.title}`
+    const collator = new Intl.Collator();
+    const sortedContacts: Array<SmartMessageDetailContact> = finalContacts.sort(
+      (
+        left: SmartMessageDetailContact,
+        right: SmartMessageDetailContact
+      ): number => {
+        const leftErrors = Boolean(left.errors && left.errors.length);
+        const rightErrors = Boolean(right.errors && right.errors.length);
+
+        if (leftErrors && !rightErrors) {
+          return -1;
+        }
+        if (!leftErrors && rightErrors) {
+          return 1;
+        }
+
+        return collator.compare(left.title, right.title);
+      }
     );
 
     return {
@@ -841,7 +864,11 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         };
       }
       default:
-        window.log.error(missingCaseError(callHistoryDetails));
+        window.log.error(
+          `getPropsForCallHistory: missing case ${missingCaseError(
+            callHistoryDetails
+          )}`
+        );
         return undefined;
     }
   }
@@ -1494,7 +1521,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       const attachment = attachments[0] || {};
       const { contentType } = attachment;
 
-      if (contentType === MIME.IMAGE_GIF) {
+      if (contentType === MIME.IMAGE_GIF || Attachment.isGIF(attachments)) {
         return {
           text: body || window.i18n('message--getNotificationText--gif'),
           emoji: '🎡',
@@ -1770,18 +1797,13 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     }
 
     if (this.get('unread')) {
-      await this.markRead();
+      this.set(markRead(this.attributes));
     }
 
     await this.eraseContents();
 
     if (!fromSync) {
       const sender = this.getSource();
-
-      if (sender === undefined) {
-        throw new Error('sender is undefined');
-      }
-
       const senderUuid = this.getSourceUuid();
 
       if (senderUuid === undefined) {
@@ -2045,31 +2067,16 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     }
   }
 
-  async markRead(
-    readAt?: number,
-    options: { skipSave?: boolean } = {}
-  ): Promise<void> {
-    const { skipSave } = options;
-
-    this.unset('unread');
-
-    if (this.get('expireTimer') && !this.get('expirationStartTimestamp')) {
-      const expirationStartTimestamp = Math.min(
-        Date.now(),
-        readAt || Date.now()
-      );
-      this.set({ expirationStartTimestamp });
-    }
-
-    window.Whisper.Notifications.removeBy({ messageId: this.id });
-
-    if (!skipSave) {
-      window.Signal.Util.queueUpdateMessage(this.attributes);
-    }
+  markRead(readAt?: number, options = {}): void {
+    this.set(markRead(this.attributes, readAt, options));
   }
 
   isExpiring(): number | null {
     return this.get('expireTimer') && this.get('expirationStartTimestamp');
+  }
+
+  setToExpire(force = false, options = {}): void {
+    this.set(setToExpire(this.attributes, { ...options, force }));
   }
 
   isExpired(): boolean {
@@ -2089,33 +2096,6 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       msFromNow = 0;
     }
     return msFromNow;
-  }
-
-  async setToExpire(
-    force = false,
-    options: { skipSave?: boolean } = {}
-  ): Promise<void> {
-    const { skipSave } = options || {};
-
-    if (this.isExpiring() && (force || !this.get('expires_at'))) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const start = this.get('expirationStartTimestamp')!;
-      const delta = this.get('expireTimer') * 1000;
-      const expiresAt = start + delta;
-
-      this.set({ expires_at: expiresAt });
-
-      window.log.info('Set message expiration', {
-        start,
-        expiresAt,
-        sentAt: this.get('sent_at'),
-      });
-
-      const id = this.get('id');
-      if (id && !skipSave) {
-        window.Signal.Util.queueUpdateMessage(this.attributes);
-      }
-    }
   }
 
   getIncomingContact(): ConversationModel | undefined | null {
@@ -3651,7 +3631,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
           // GroupV1
           if (!isGroupV2 && dataMessage.group) {
             const pendingGroupUpdate = [];
-            const memberConversations: Array<typeof window.WhatIsThis> = await Promise.all(
+            const memberConversations: Array<ConversationModel> = await Promise.all(
               dataMessage.group.membersE164.map((e164: string) =>
                 window.ConversationController.getOrCreateAndWait(
                   e164,
@@ -3923,10 +3903,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
           });
         }
 
-        window.MessageController.register(
-          message.id,
-          message as typeof window.WhatIsThis
-        );
+        window.MessageController.register(message.id, message);
         conversation.incrementMessageCount();
         window.Signal.Data.updateConversation(conversation.attributes);
 
@@ -4128,7 +4105,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       this.get('conversationId')
     );
 
-    let staleReactionFromId: string | undefined;
+    let reactionToRemove: Partial<ReactionType> | undefined;
 
     if (reaction.get('remove')) {
       window.log.info('Removing reaction for message', messageId);
@@ -4139,7 +4116,18 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       );
       this.set({ reactions: newReactions });
 
-      staleReactionFromId = reaction.get('fromId');
+      reactionToRemove = {
+        emoji: reaction.get('emoji'),
+        targetAuthorUuid: reaction.get('targetAuthorUuid'),
+        targetTimestamp: reaction.get('targetTimestamp'),
+      };
+
+      await window.Signal.Data.removeReactionFromConversation({
+        emoji: reaction.get('emoji'),
+        fromId: reaction.get('fromId'),
+        targetAuthorUuid: reaction.get('targetAuthorUuid'),
+        targetTimestamp: reaction.get('targetTimestamp'),
+      });
     } else {
       window.log.info('Adding reaction for message', messageId);
       const newReactions = reactions.filter(
@@ -4152,8 +4140,21 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         re => re.fromId === reaction.get('fromId')
       );
       if (oldReaction) {
-        staleReactionFromId = oldReaction.fromId;
+        reactionToRemove = {
+          emoji: oldReaction.emoji,
+          targetAuthorUuid: oldReaction.targetAuthorUuid,
+          targetTimestamp: oldReaction.targetTimestamp,
+        };
       }
+
+      await window.Signal.Data.addReaction({
+        conversationId: this.get('conversationId'),
+        emoji: reaction.get('emoji'),
+        fromId: reaction.get('fromId'),
+        messageReceivedAt: this.get('received_at'),
+        targetAuthorUuid: reaction.get('targetAuthorUuid'),
+        targetTimestamp: reaction.get('targetTimestamp'),
+      });
 
       // Only notify for reactions to our own messages
       if (conversation && this.isOutgoing() && !reaction.get('fromSync')) {
@@ -4161,8 +4162,8 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       }
     }
 
-    if (staleReactionFromId) {
-      this.clearNotifications(reaction.get('fromId'));
+    if (reactionToRemove) {
+      this.clearNotifications(reactionToRemove);
     }
 
     const newCount = (this.get('reactions') || []).length;
@@ -4202,10 +4203,10 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     this.getConversation()!.updateLastMessage();
   }
 
-  clearNotifications(reactionFromId?: string): void {
+  clearNotifications(reaction: Partial<ReactionType> = {}): void {
     window.Whisper.Notifications.removeBy({
+      ...reaction,
       messageId: this.id,
-      reactionFromId,
     });
   }
 }
@@ -4237,7 +4238,7 @@ export async function getMessageById(
   return message;
 }
 
-window.Whisper.Message = MessageModel as typeof window.WhatIsThis;
+window.Whisper.Message = MessageModel;
 
 window.Whisper.Message.getLongMessageAttachment = ({
   body,
@@ -4272,7 +4273,7 @@ window.Whisper.Message.updateTimers = () => {
 
 window.Whisper.MessageCollection = window.Backbone.Collection.extend({
   model: window.Whisper.Message,
-  comparator(left: typeof window.WhatIsThis, right: typeof window.WhatIsThis) {
+  comparator(left: Readonly<MessageModel>, right: Readonly<MessageModel>) {
     if (left.get('received_at') === right.get('received_at')) {
       return (left.get('sent_at') || 0) - (right.get('sent_at') || 0);
     }

@@ -42,6 +42,8 @@ const {
   systemPreferences,
 } = electron;
 
+const animationSettings = systemPreferences.getAnimationSettings();
+
 const appUserModelId = `org.whispersystems.${packageJson.name}`;
 console.log('Set Windows Application User Model ID (AUMID)', {
   appUserModelId,
@@ -255,6 +257,9 @@ function prepareURL(pathSegments, moreKeys) {
       contentProxyUrl: config.contentProxyUrl,
       sfuUrl: config.get('sfuUrl'),
       importMode: importMode ? true : undefined, // for stringify()
+      reducedMotionSetting: animationSettings.prefersReducedMotion
+        ? true
+        : undefined,
       serverPublicParams: config.get('serverPublicParams'),
       serverTrustRoot: config.get('serverTrustRoot'),
       appStartInitialSpellcheckSetting,
@@ -590,6 +595,12 @@ ipc.on('database-ready', async event => {
 
 ipc.on('show-window', () => {
   showWindow();
+});
+
+ipc.on('set-secure-input', (_sender, enabled) => {
+  if (app.setSecureKeyboardEntryEnabled) {
+    app.setSecureKeyboardEntryEnabled(enabled);
+  }
 });
 
 ipc.on('title-bar-double-click', () => {
@@ -1502,6 +1513,7 @@ ipc.on('draw-attention', () => {
 });
 
 ipc.on('restart', () => {
+  console.log('Relaunching application');
   app.relaunch();
   app.quit();
 });
@@ -1551,7 +1563,10 @@ ipc.handle('show-calling-permissions-popup', async (event, forCamera) => {
   try {
     await showPermissionsPopupWindow(true, forCamera);
   } catch (error) {
-    console.error(error);
+    console.error(
+      'show-calling-permissions-popup error:',
+      error && error.stack ? error.stack : error
+    );
   }
 });
 ipc.on('close-permissions-popup', () => {
@@ -1598,6 +1613,9 @@ installSettingsSetter('badge-count-muted-conversations');
 
 installSettingsGetter('spell-check');
 installSettingsSetter('spell-check', true);
+
+installSettingsGetter('auto-launch');
+installSettingsSetter('auto-launch');
 
 installSettingsGetter('read-receipt-setting');
 installSettingsSetter('read-receipt-setting');

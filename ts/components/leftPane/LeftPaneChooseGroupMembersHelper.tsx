@@ -9,6 +9,7 @@ import { ConversationType } from '../../state/ducks/conversations';
 import { ContactCheckboxDisabledReason } from '../conversationList/ContactCheckbox';
 import { ContactPills } from '../ContactPills';
 import { ContactPill } from '../ContactPill';
+import { SearchInput } from '../SearchInput';
 import {
   AddGroupMemberErrorDialog,
   AddGroupMemberErrorDialogMode,
@@ -31,9 +32,7 @@ export type LeftPaneChooseGroupMembersPropsType = {
 
 /* eslint-disable class-methods-use-this */
 
-export class LeftPaneChooseGroupMembersHelper extends LeftPaneHelper<
-  LeftPaneChooseGroupMembersPropsType
-> {
+export class LeftPaneChooseGroupMembersHelper extends LeftPaneHelper<LeftPaneChooseGroupMembersPropsType> {
   private readonly candidateContacts: ReadonlyArray<ConversationType>;
 
   private readonly cantAddContactForModal:
@@ -154,17 +153,13 @@ export class LeftPaneChooseGroupMembersHelper extends LeftPaneHelper<
 
     return (
       <>
-        <div className="module-left-pane__compose-search-form">
-          <input
-            type="text"
-            ref={focusRef}
-            className="module-left-pane__compose-search-form__input"
-            placeholder={i18n('contactSearchPlaceholder')}
-            dir="auto"
-            value={this.searchTerm}
-            onChange={onChangeComposeSearchTerm}
-          />
-        </div>
+        <SearchInput
+          moduleClassName="module-left-pane__compose-search-form"
+          onChange={onChangeComposeSearchTerm}
+          placeholder={i18n('contactSearchPlaceholder')}
+          ref={focusRef}
+          value={this.searchTerm}
+        />
 
         {Boolean(this.selectedContacts.length) && (
           <ContactPills>

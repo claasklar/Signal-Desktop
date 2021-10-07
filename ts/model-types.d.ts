@@ -33,9 +33,7 @@ type DeletesAttributesType = {
   targetSentTimestamp: number;
 };
 
-export declare class DeletesModelType extends Backbone.Model<
-  DeletesAttributesType
-> {
+export declare class DeletesModelType extends Backbone.Model<DeletesAttributesType> {
   forMessage(message: MessageModel): Array<DeletesModelType>;
   onDelete(doe: DeletesAttributesType): Promise<void>;
 }
@@ -111,8 +109,6 @@ export type MessageAttributesType = {
   quote?: QuotedMessageType;
   reactions?: Array<{
     emoji: string;
-    timestamp: number;
-    fromId: string;
     from: {
       id: string;
       color?: string;
@@ -122,6 +118,10 @@ export type MessageAttributesType = {
       isMe?: boolean;
       phoneNumber?: string;
     };
+    fromId: string;
+    targetAuthorUuid: string;
+    targetTimestamp: number;
+    timestamp: number;
   }>;
   read_by: Array<string | null>;
   requiredProtocolVersion: number;
@@ -153,12 +153,12 @@ export type MessageAttributesType = {
   attachments: Array<WhatIsThis>;
   preview: Array<WhatIsThis>;
   sticker: WhatIsThis;
-  sent_at: WhatIsThis;
+  sent_at: number;
   sent_to: Array<string>;
   unidentifiedDeliveries: Array<string>;
   contact: Array<WhatIsThis>;
   conversationId: string;
-  recipients: Array<WhatIsThis>;
+  recipients: Array<string>;
   reaction: WhatIsThis;
   destination?: WhatIsThis;
   destinationUuid?: string;
@@ -214,7 +214,10 @@ export type ConversationAttributesType = {
   messageCountBeforeMessageRequests?: number | null;
   messageRequestResponseType?: number;
   muteExpiresAt?: number;
-  profileAvatar?: WhatIsThis;
+  profileAvatar?: null | {
+    hash: string;
+    path: string;
+  };
   profileKeyCredential?: string | null;
   profileKeyVersion?: string | null;
   quotedMessageId?: string | null;
@@ -340,12 +343,8 @@ export type ShallowChallengeError = CustomError & {
   readonly data: SendMessageChallengeData;
 };
 
-export declare class ConversationModelCollectionType extends Backbone.Collection<
-  ConversationModel
-> {
+export declare class ConversationModelCollectionType extends Backbone.Collection<ConversationModel> {
   resetLookups(): void;
 }
 
-export declare class MessageModelCollectionType extends Backbone.Collection<
-  MessageModel
-> {}
+export declare class MessageModelCollectionType extends Backbone.Collection<MessageModel> {}

@@ -20,11 +20,12 @@ import {
   WebAPIType,
 } from './WebAPI';
 import createTaskWithTimeout from './TaskWithTimeout';
-import OutgoingMessage from './OutgoingMessage';
+import OutgoingMessage, { SerializedCertificateType } from './OutgoingMessage';
 import Crypto from './Crypto';
 import {
   base64ToArrayBuffer,
   concatenateBytes,
+  getRandomBytes,
   getZeroes,
   hexToArrayBuffer,
 } from '../Crypto';
@@ -49,7 +50,6 @@ import {
   LinkPreviewImage,
   LinkPreviewMetadata,
 } from '../linkPreviews/linkPreviewFetch';
-import { SerializedCertificateType } from '../metadata/SecretSessionCipher';
 
 function stringToArrayBuffer(str: string): ArrayBuffer {
   if (typeof str !== 'string') {
@@ -476,8 +476,8 @@ export default class MessageSender {
     }
 
     const padded = this.getPaddedAttachment(data);
-    const key = window.libsignal.crypto.getRandomBytes(64);
-    const iv = window.libsignal.crypto.getRandomBytes(16);
+    const key = getRandomBytes(64);
+    const iv = getRandomBytes(16);
 
     const result = await Crypto.encryptAttachment(padded, key, iv);
     const id = await this.server.putAttachment(result.ciphertext);
@@ -1313,7 +1313,7 @@ export default class MessageSender {
   }
 
   async syncViewOnceOpen(
-    sender: string,
+    sender: string | undefined,
     senderUuid: string,
     timestamp: number,
     options?: SendOptionsType
@@ -1328,9 +1328,9 @@ export default class MessageSender {
     const syncMessage = this.createSyncMessage();
 
     const viewOnceOpen = new window.textsecure.protobuf.SyncMessage.ViewOnceOpen();
-    viewOnceOpen.sender = sender;
-    viewOnceOpen.senderUuid = senderUuid;
-    viewOnceOpen.timestamp = timestamp;
+    viewOnceOpen.sender = sender || null;
+    viewOnceOpen.senderUuid = senderUuid || null;
+    viewOnceOpen.timestamp = timestamp || null;
     syncMessage.viewOnceOpen = viewOnceOpen;
 
     const contentMessage = new window.textsecure.protobuf.Content();
@@ -1431,11 +1431,11 @@ export default class MessageSender {
 
   getRandomPadding(): ArrayBuffer {
     // Generate a random int from 1 and 512
-    const buffer = window.libsignal.crypto.getRandomBytes(2);
+    const buffer = getRandomBytes(2);
     const paddingLength = (new Uint16Array(buffer)[0] & 0x1ff) + 1;
 
     // Generate a random padding buffer of the chosen size
-    return window.libsignal.crypto.getRandomBytes(paddingLength);
+    return getRandomBytes(paddingLength);
   }
 
   async sendNullMessage(
@@ -1670,31 +1670,10 @@ export default class MessageSender {
       window.log.error(prefix, error && error.stack ? error.stack : error);
       throw error;
     };
-    const closeAllSessions = async (targetIdentifier: string) =>
-      window.textsecure.storage.protocol
-        .getDeviceIds(targetIdentifier)
-        .then(async deviceIds =>
-          Promise.all(
-            deviceIds.map(async deviceId => {
-              const address = new window.libsignal.SignalProtocolAddress(
-                targetIdentifier,
-                deviceId
-              );
-              window.log.info(
-                'resetSession: closing sessions for',
-                address.toString()
-              );
-              const sessionCipher = new window.libsignal.SessionCipher(
-                window.textsecure.storage.protocol,
-                address
-              );
-              return sessionCipher.closeOpenSessionForDevice();
-            })
-          )
-        );
 
-    const sendToContactPromise = closeAllSessions(identifier)
-      .catch(logError('resetSession/closeAllSessions1 error:'))
+    const sendToContactPromise = window.textsecure.storage.protocol
+      .archiveAllSessions(identifier)
+      .catch(logError('resetSession/archiveAllSessions1 error:'))
       .then(async () => {
         window.log.info(
           'resetSession: finished closing local sessions, now sending to contact'
@@ -1708,9 +1687,9 @@ export default class MessageSender {
         ).catch(logError('resetSession/sendToContact error:'));
       })
       .then(async () =>
-        closeAllSessions(identifier).catch(
-          logError('resetSession/closeAllSessions2 error:')
-        )
+        window.textsecure.storage.protocol
+          .archiveAllSessions(identifier)
+          .catch(logError('resetSession/archiveAllSessions2 error:'))
       );
 
     const myNumber = window.textsecure.storage.user.getNumber();

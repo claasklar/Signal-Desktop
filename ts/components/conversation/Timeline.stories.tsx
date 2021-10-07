@@ -6,12 +6,12 @@ import { storiesOf } from '@storybook/react';
 import { text, boolean, number } from '@storybook/addon-knobs';
 import { action } from '@storybook/addon-actions';
 
-import { getDefaultConversation } from '../../test-both/helpers/getDefaultConversation';
 import { setup as setupI18n } from '../../../js/modules/i18n';
 import enMessages from '../../../_locales/en/messages.json';
 import { PropsType, Timeline } from './Timeline';
 import { TimelineItem, TimelineItemType } from './TimelineItem';
 import { ConversationHero } from './ConversationHero';
+import { getDefaultConversation } from '../../test-both/helpers/getDefaultConversation';
 import { LastSeenIndicator } from './LastSeenIndicator';
 import { TimelineLoadingRow } from './TimelineLoadingRow';
 import { TypingBubble } from './TypingBubble';
@@ -274,6 +274,16 @@ const actions = () => ({
 
   contactSupport: action('contactSupport'),
 
+  closeContactSpoofingReview: action('closeContactSpoofingReview'),
+  reviewMessageRequestNameCollision: action(
+    'reviewMessageRequestNameCollision'
+  ),
+
+  onBlock: action('onBlock'),
+  onBlockAndDelete: action('onBlockAndDelete'),
+  onDelete: action('onDelete'),
+  onUnblock: action('onUnblock'),
+
   unblurAvatar: action('unblurAvatar'),
 });
 
@@ -359,6 +369,7 @@ const createProps = (overrideProps: Partial<PropsType> = {}): PropsType => ({
     undefined,
   invitedContactsForNewlyCreatedGroup:
     overrideProps.invitedContactsForNewlyCreatedGroup || [],
+  warning: overrideProps.warning,
 
   id: '',
   renderItem,
@@ -459,6 +470,17 @@ story.add('With invited contacts for a newly-created group', () => {
         title: 'Bon John Bon Jovi',
       }),
     ],
+  });
+
+  return <Timeline {...props} />;
+});
+
+story.add('With "same name" warning', () => {
+  const props = createProps({
+    warning: {
+      safeConversation: getDefaultConversation(),
+    },
+    items: [],
   });
 
   return <Timeline {...props} />;
