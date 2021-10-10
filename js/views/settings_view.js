@@ -152,6 +152,14 @@
           window.setSpellCheck(val);
         },
       });
+      if (Settings.isAutoLaunchSupported()) {
+        new CheckboxView({
+          el: this.$('.auto-launch-setting'),
+          name: 'auto-launch-setting',
+          value: window.initialData.autoLaunch,
+          setFn: window.setAutoLaunch,
+        });
+      }
       if (Settings.isHideMenuBarSupported()) {
         new CheckboxView({
           el: this.$('.menu-bar-setting'),
@@ -244,6 +252,7 @@
         isAudioNotificationSupported: Settings.isAudioNotificationSupported(),
         isHideMenuBarSupported: Settings.isHideMenuBarSupported(),
         isDrawAttentionSupported: Settings.isDrawAttentionSupported(),
+        isAutoLaunchSupported: Settings.isAutoLaunchSupported(),
         hasSystemTheme: true,
         themeLight: i18n('themeLight'),
         themeDark: i18n('themeDark'),
@@ -284,6 +293,7 @@
         spellCheckDirtyText: appStartSpellCheck
           ? i18n('spellCheckWillBeDisabled')
           : i18n('spellCheckWillBeEnabled'),
+        autoLaunchDescription: i18n('autoLaunchDescription'),
       };
     },
     onClose() {

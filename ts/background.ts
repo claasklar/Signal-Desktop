@@ -15,8 +15,12 @@ import { isValidReactionEmoji } from './reactions/isValidReactionEmoji';
 import { ConversationModel } from './models/conversations';
 import { getMessageById } from './models/messages';
 import { createBatcher } from './util/batcher';
+import { updateConversationsWithUuidLookup } from './updateConversationsWithUuidLookup';
+import { initializeAllJobQueues } from './jobs/initializeAllJobQueues';
+import { removeStorageKeyJobQueue } from './jobs/removeStorageKeyJobQueue';
 import { ourProfileKeyService } from './services/ourProfileKey';
 import { shouldRespondWithProfileKey } from './util/shouldRespondWithProfileKey';
+import { setToExpire } from './services/MessageUpdater';
 
 const MAX_ATTACHMENT_DOWNLOAD_AGE = 3600 * 72 * 1000;
 
@@ -33,6 +37,8 @@ export async function startApp(): Promise<void> {
       err && err.stack ? err.stack : err
     );
   }
+
+  initializeAllJobQueues();
 
   ourProfileKeyService.initialize(window.storage);
 
@@ -162,9 +168,7 @@ export async function startApp(): Promise<void> {
       clearSelectedMessage();
     }
     if (userChanged) {
-      userChanged({
-        interactionMode,
-      } as WhatIsThis);
+      userChanged({ interactionMode });
     }
   };
   window.enterMouseMode = () => {
@@ -180,7 +184,7 @@ export async function startApp(): Promise<void> {
       clearSelectedMessage();
     }
     if (userChanged) {
-      userChanged({ interactionMode } as WhatIsThis);
+      userChanged({ interactionMode });
     }
   };
 
@@ -200,7 +204,7 @@ export async function startApp(): Promise<void> {
 
   // Load these images now to ensure that they don't flicker on first use
   window.preloadedImages = [];
-  function preload(list: Array<WhatIsThis>) {
+  function preload(list: ReadonlyArray<string>) {
     for (let index = 0, max = list.length; index < max; index += 1) {
       const image = new Image();
       image.src = `./images/${list[index]}`;
@@ -344,7 +348,7 @@ export async function startApp(): Promise<void> {
   window.log.info('Storage fetch');
   window.storage.fetch();
 
-  function mapOldThemeToNew(theme: WhatIsThis) {
+  function mapOldThemeToNew(theme: Readonly<unknown>) {
     switch (theme) {
       case 'dark':
       case 'light':
@@ -377,7 +381,7 @@ export async function startApp(): Promise<void> {
           'theme-setting',
           window.platform === 'darwin' ? 'system' : 'light'
         ),
-      setThemeSetting: (value: WhatIsThis) => {
+      setThemeSetting: (value: 'light' | 'dark' | 'system') => {
         window.storage.put('theme-setting', value);
         onChangeTheme();
       },
@@ -441,6 +445,9 @@ export async function startApp(): Promise<void> {
       setAlwaysRelayCalls: (value: boolean) =>
         window.storage.put('always-relay-calls', value),
 
+      getAutoLaunch: () => window.getAutoLaunch(),
+      setAutoLaunch: (value: boolean) => window.setAutoLaunch(value),
+
       // eslint-disable-next-line eqeqeq
       isPrimary: () => window.textsecure.storage.user.getDeviceId() == '1',
       getSyncRequest: () =>
@@ -466,7 +473,9 @@ export async function startApp(): Promise<void> {
       removeDarkOverlay: () => $('.dark-overlay').remove(),
       showKeyboardShortcuts: () => window.showKeyboardShortcuts(),
 
-      deleteAllData: () => {
+      deleteAllData: async () => {
+        await window.sqlInitializer.goBackToMainProcess();
+
         const clearDataView = new window.Whisper.ClearDataView().render();
         $('body').append(clearDataView.el);
       },
@@ -675,6 +684,13 @@ export async function startApp(): Promise<void> {
         window.isAfterVersion(lastVersion, 'v1.40.0-beta.1')
       ) {
         await window.Signal.Data.clearAllErrorStickerPackAttempts();
+      }
+
+      if (window.isBeforeVersion(lastVersion, 'v5.2.0')) {
+        const legacySenderCertificateStorageKey = 'senderCertificateWithUuid';
+        await removeStorageKeyJobQueue.add({
+          key: legacySenderCertificateStorageKey,
+        });
       }
 
       // This one should always be last - it could restart the app
@@ -903,10 +919,10 @@ export async function startApp(): Promise<void> {
     const changedConvoBatcher = createBatcher<ConversationModel>({
       name: 'changedConvoBatcher',
       processBatch(batch) {
-        const deduped = Array.from(new Set(batch));
+        const deduped = new Set(batch);
         window.log.info(
           'changedConvoBatcher: deduped ' +
-            `${batch.length} into ${deduped.length}`
+            `${batch.length} into ${deduped.size}`
         );
 
         deduped.forEach(conversation => {
@@ -1157,7 +1173,7 @@ export async function startApp(): Promise<void> {
         (key === 'l' || key === 'L')
       ) {
         const button = document.querySelector(
-          '.module-ConversationHeader__more-button'
+          '.module-ConversationHeader__button--more'
         );
         if (!button) {
           return;
@@ -1543,10 +1559,11 @@ export async function startApp(): Promise<void> {
             `Cleanup: Starting timer for delivered message ${sentAt}`
           );
           message.set(
-            'expirationStartTimestamp',
-            expirationStartTimestamp || sentAt
+            setToExpire({
+              ...message.attributes,
+              expirationStartTimestamp: expirationStartTimestamp || sentAt,
+            })
           );
-          await message.setToExpire();
           return;
         }
 
@@ -1852,41 +1869,21 @@ export async function startApp(): Promise<void> {
         }
 
         try {
-          if (window.Signal.RemoteConfig.isEnabled('desktop.cds')) {
-            const lonelyE164s = window
-              .getConversations()
-              .filter(c =>
-                Boolean(
-                  c.isPrivate() &&
-                    c.get('e164') &&
-                    !c.get('uuid') &&
-                    !c.isEverUnregistered()
-                )
+          const lonelyE164Conversations = window
+            .getConversations()
+            .filter(c =>
+              Boolean(
+                c.isPrivate() &&
+                  c.get('e164') &&
+                  !c.get('uuid') &&
+                  !c.isEverUnregistered()
               )
-              .map(c => c.get('e164'))
-              .filter(Boolean) as Array<string>;
-
-            if (lonelyE164s.length > 0) {
-              const lookup = await window.textsecure.messaging.getUuidsForE164s(
-                lonelyE164s
-              );
-              const e164s = Object.keys(lookup);
-              e164s.forEach(e164 => {
-                const uuid = lookup[e164];
-                if (!uuid) {
-                  const byE164 = window.ConversationController.get(e164);
-                  if (byE164) {
-                    byE164.setUnregistered();
-                  }
-                }
-                window.ConversationController.ensureContactIds({
-                  e164,
-                  uuid,
-                  highTrust: true,
-                });
-              });
-            }
-          }
+            );
+          await updateConversationsWithUuidLookup({
+            conversationController: window.ConversationController,
+            conversations: lonelyE164Conversations,
+            messaging: window.textsecure.messaging,
+          });
         } catch (error) {
           window.log.error(
             'connect: Error fetching UUIDs for lonely e164s:',
@@ -1912,7 +1909,7 @@ export async function startApp(): Promise<void> {
         USERNAME,
         PASSWORD,
         mySignalingKey,
-        messageReceiverOptions as WhatIsThis
+        messageReceiverOptions
       );
       window.textsecure.messageReceiver = messageReceiver;
 
@@ -1921,7 +1918,7 @@ export async function startApp(): Promise<void> {
       preMessageReceiverStatus = null;
 
       // eslint-disable-next-line no-inner-declarations
-      function addQueuedEventListener(name: WhatIsThis, handler: WhatIsThis) {
+      function addQueuedEventListener(name: string, handler: WhatIsThis) {
         messageReceiver.addEventListener(name, (...args: Array<WhatIsThis>) =>
           eventHandlerQueue.add(async () => {
             try {

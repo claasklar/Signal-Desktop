@@ -4,8 +4,18 @@
 /* eslint-disable more/no-then */
 /* eslint-disable max-classes-per-file */
 
-import { KeyPairType } from '../libsignal.d';
+import { KeyPairType } from './Types.d';
 import { ProvisionEnvelopeClass, ProvisionMessageClass } from '../textsecure.d';
+import {
+  decryptAes256CbcPkcsPadding,
+  deriveSecrets,
+  encryptAes256CbcPkcsPadding,
+  bytesFromString,
+  hmacSha256,
+  verifyHmacSha256,
+  getRandomBytes,
+} from '../Crypto';
+import { calculateAgreement, createKeyPair, generateKeyPair } from '../Curve';
 
 type ProvisionDecryptResult = {
   identityKeyPair: KeyPairType;
@@ -38,81 +48,61 @@ class ProvisioningCipherInner {
       throw new Error('ProvisioningCipher.decrypt: No keypair!');
     }
 
-    return window.libsignal.Curve.async
-      .calculateAgreement(masterEphemeral, this.keyPair.privKey)
-      .then(async ecRes =>
-        window.libsignal.HKDF.deriveSecrets(
-          ecRes,
-          new ArrayBuffer(32),
-          'TextSecure Provisioning Message'
-        )
-      )
-      .then(async keys =>
-        window.libsignal.crypto
-          .verifyMAC(ivAndCiphertext, keys[1], mac, 32)
-          .then(async () =>
-            window.libsignal.crypto.decrypt(keys[0], ciphertext, iv)
-          )
-      )
-      .then(async plaintext => {
-        const provisionMessage = window.textsecure.protobuf.ProvisionMessage.decode(
-          plaintext
-        );
-        const privKey = provisionMessage.identityKeyPrivate.toArrayBuffer();
+    const ecRes = calculateAgreement(masterEphemeral, this.keyPair.privKey);
+    const keys = deriveSecrets(
+      ecRes,
+      new ArrayBuffer(32),
+      bytesFromString('TextSecure Provisioning Message')
+    );
+    await verifyHmacSha256(ivAndCiphertext, keys[1], mac, 32);
 
-        return window.libsignal.Curve.async
-          .createKeyPair(privKey)
-          .then(keyPair => {
-            window.normalizeUuids(
-              provisionMessage,
-              ['uuid'],
-              'ProvisioningCipher.decrypt'
-            );
+    const plaintext = await decryptAes256CbcPkcsPadding(
+      keys[0],
+      ciphertext,
+      iv
+    );
+    const provisionMessage = window.textsecure.protobuf.ProvisionMessage.decode(
+      plaintext
+    );
+    const privKey = provisionMessage.identityKeyPrivate.toArrayBuffer();
 
-            const ret: ProvisionDecryptResult = {
-              identityKeyPair: keyPair,
-              number: provisionMessage.number,
-              uuid: provisionMessage.uuid,
-              provisioningCode: provisionMessage.provisioningCode,
-              userAgent: provisionMessage.userAgent,
-              readReceipts: provisionMessage.readReceipts,
-            };
-            if (provisionMessage.profileKey) {
-              ret.profileKey = provisionMessage.profileKey.toArrayBuffer();
-            }
-            return ret;
-          });
-      });
+    const keyPair = createKeyPair(privKey);
+    window.normalizeUuids(
+      provisionMessage,
+      ['uuid'],
+      'ProvisioningCipher.decrypt'
+    );
+
+    const ret: ProvisionDecryptResult = {
+      identityKeyPair: keyPair,
+      number: provisionMessage.number,
+      uuid: provisionMessage.uuid,
+      provisioningCode: provisionMessage.provisioningCode,
+      userAgent: provisionMessage.userAgent,
+      readReceipts: provisionMessage.readReceipts,
+    };
+    if (provisionMessage.profileKey) {
+      ret.profileKey = provisionMessage.profileKey.toArrayBuffer();
+    }
+    return ret;
   }
 
   async getPublicKey(): Promise<ArrayBuffer> {
-    return Promise.resolve()
-      .then(async () => {
-        if (!this.keyPair) {
-          return window.libsignal.Curve.async
-            .generateKeyPair()
-            .then(keyPair => {
-              this.keyPair = keyPair;
-            });
-        }
+    if (!this.keyPair) {
+      this.keyPair = generateKeyPair();
+    }
 
-        return null;
-      })
-      .then(() => {
-        if (!this.keyPair) {
-          throw new Error('ProvisioningCipher.decrypt: No keypair!');
-        }
+    if (!this.keyPair) {
+      throw new Error('ProvisioningCipher.decrypt: No keypair!');
+    }
 
-        return this.keyPair.pubKey;
-      });
+    return this.keyPair.pubKey;
   }
 
   public async getPrivateKey(): Promise<ArrayBuffer> {
     if (!this.keyPair) {
-      return window.libsignal.Curve.async.generateKeyPair().then(keyPair => {
-        this.keyPair = keyPair;
-        return this.keyPair.privKey;
-      });
+      this.keyPair = generateKeyPair();
+      return this.keyPair.privKey;
     }
     return Promise.resolve(this.keyPair.privKey);
   }
@@ -125,44 +115,35 @@ class ProvisioningCipherInner {
       const plainText = provisionMessage.toArrayBuffer();
       const masterEphemeral = publicKey;
 
-      return window.libsignal.Curve.async
-        .calculateAgreement(masterEphemeral, privKey)
-        .then(async sharedSecret => {
-          return window.libsignal.HKDF.deriveSecrets(
-            sharedSecret,
-            new ArrayBuffer(32),
-            'TextSecure Provisioning Message'
-          ).then(async derivedSecret => {
-            const version = Uint8Array.from([1]);
-            const iv = window.libsignal.crypto.getRandomBytes(16);
-            return window.libsignal.crypto
-              .encrypt(derivedSecret[0], plainText, iv)
-              .then(async (cyphterText: ArrayBuffer) => {
-                const versionCyphterText = ProvisioningCipherInner.appendBuffer(
-                  ProvisioningCipherInner.appendBuffer(
-                    version,
-                    new Uint8Array(iv)
-                  ),
-                  new Uint8Array(cyphterText)
-                ).buffer;
-                return window.libsignal.crypto
-                  .calculateMAC(derivedSecret[1], versionCyphterText)
-                  .then(async mac => {
-                    const body = ProvisioningCipherInner.appendBuffer(
-                      new Uint8Array(versionCyphterText),
-                      new Uint8Array(mac)
-                    );
+      const sharedSecret = calculateAgreement(masterEphemeral, privKey);
+      const derivedSecret = deriveSecrets(
+        sharedSecret,
+        new ArrayBuffer(32),
+        bytesFromString('TextSecure Provisioning Message')
+      );
+      const version = Uint8Array.from([1]);
+      const iv = getRandomBytes(16);
+      const cyphterText = await encryptAes256CbcPkcsPadding(
+        derivedSecret[0],
+        plainText,
+        iv
+      );
+      const versionCyphterText = ProvisioningCipherInner.appendBuffer(
+        ProvisioningCipherInner.appendBuffer(version, new Uint8Array(iv)),
+        new Uint8Array(cyphterText)
+      ).buffer;
+      const mac = await hmacSha256(derivedSecret[1], versionCyphterText);
+      const body = ProvisioningCipherInner.appendBuffer(
+        new Uint8Array(versionCyphterText),
+        new Uint8Array(mac)
+      );
 
-                    return this.getPublicKey().then(ownPubKey => {
-                      const provisionEnvelope: ProvisionEnvelopeClass = new window.textsecure.protobuf.ProvisionEnvelope();
-                      provisionEnvelope.publicKey = new Uint8Array(ownPubKey);
-                      provisionEnvelope.body = new Uint8Array(body);
-                      return provisionEnvelope;
-                    });
-                  });
-              });
-          });
-        });
+      return this.getPublicKey().then(ownPubKey => {
+        const provisionEnvelope: ProvisionEnvelopeClass = new window.textsecure.protobuf.ProvisionEnvelope();
+        provisionEnvelope.publicKey = new Uint8Array(ownPubKey);
+        provisionEnvelope.body = new Uint8Array(body);
+        return provisionEnvelope;
+      });
     });
   }
 

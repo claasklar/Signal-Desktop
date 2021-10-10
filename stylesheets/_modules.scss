@@ -674,6 +674,10 @@
     border-top-left-radius: 0px;
     border-top-right-radius: 0px;
   }
+
+  .module-message__container--gif & {
+    border-radius: inherit;
+  }
 }
 
 .module-message__sticker-container {
@@ -2127,7 +2131,6 @@ $timer-icons: '55', '50', '45', '40', '35', '30', '25', '20', '15', '10', '05',
 
 .module-about {
   &__container {
-    margin-bottom: 8px;
     margin-left: auto;
     margin-right: auto;
     max-width: 248px;
@@ -4241,47 +4244,60 @@ button.module-conversation-details__action-button {
   overflow: hidden;
 }
 
+.module-image--tap-to-play,
 .module-image--not-downloaded {
   align-items: center;
   display: flex;
   justify-content: center;
 
-  i {
+  span {
     align-items: center;
     display: flex;
     justify-content: center;
     border-radius: 48px;
     height: 48px;
     width: 48px;
-
-    @include light-theme {
-      background-color: $color-gray-65;
-    }
-    @include dark-theme {
-      background-color: $color-gray-75;
-    }
-
-    &:after {
-      content: '';
-      height: 17px;
-      width: 17px;
-      @include color-svg('../images/icons/v2/arrow-down-24.svg', $color-white);
-    }
+    background-color: $color-black-alpha-70;
   }
 
   &:hover {
-    i {
-      background-color: $color-black;
+    span {
+      background-color: $color-black-alpha-80;
     }
   }
 
   &:focus {
-    i {
+    span {
       background-color: $color-gray-75;
       border: 4px solid $ultramarine-ui-light;
       box-sizing: border-box;
       outline: none;
     }
+  }
+}
+
+.module-image--not-downloaded {
+  span:after {
+    content: '';
+    height: 24px;
+    width: 24px;
+
+    @include color-svg('../images/icons/v2/arrow-down-24.svg', $color-white);
+  }
+}
+
+.module-image--tap-to-play {
+  span:after {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    content: 'GIF';
+    height: 24px;
+    width: 24px;
+
+    @include font-body-1;
+    color: $color-white;
   }
 }
 
@@ -4386,6 +4402,26 @@ button.module-conversation-details__action-button {
   }
   @include dark-theme {
     box-shadow: inset 0px 0px 0px 1px $color-white-alpha-20;
+  }
+}
+
+.module-image--gif {
+  border-radius: 18px;
+
+  &__filesize {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 2px 8px;
+
+    color: $color-white;
+    background: $color-black-alpha-70;
+
+    /* The height is: 14px + 2x2px from the padding */
+    border-radius: 9px;
+
+    font-size: 11px;
+    line-height: 14px;
   }
 }
 
@@ -7296,39 +7332,8 @@ button.module-image__border-overlay:focus {
 }
 
 .module-left-pane__compose-search-form {
-  display: flex;
-  padding: 8px 16px;
-  margin-bottom: 8px;
-
   &__input {
     flex-grow: 1;
-
-    padding: 5px 12px;
-
-    border-radius: 17px;
-    border: none;
-
-    @include font-body-1;
-
-    @include light-theme {
-      background-color: $color-gray-05;
-      color: $color-gray-90;
-      border: solid 1px $color-gray-02;
-    }
-    @include dark-theme {
-      color: $color-gray-05;
-      background-color: $color-gray-95;
-      border: solid 1px $color-gray-80;
-    }
-
-    &:placeholder {
-      color: $color-gray-45;
-    }
-
-    &:focus {
-      border: solid 1px $ultramarine-ui-light;
-      outline: none;
-    }
   }
 }
 
@@ -10244,9 +10249,14 @@ $contact-modal-padding: 18px;
   margin-top: 6px;
 }
 
-.module-contact-modal__profile-and-number {
-  color: $color-gray-60;
+.module-contact-modal__info {
+  text-align: center;
+  max-width: 248px;
+  margin-top: 8px;
 
+  @include light-theme {
+    color: $color-gray-60;
+  }
   @include dark-theme {
     color: $color-gray-25;
   }
@@ -10746,6 +10756,11 @@ $contact-modal-padding: 18px;
 
   &--deleted-for-everyone {
     font-style: italic;
+  }
+
+  &--gif {
+    border-radius: inherit;
+    background: inherit;
   }
 }
 

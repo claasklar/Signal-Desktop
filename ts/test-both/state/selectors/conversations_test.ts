@@ -24,6 +24,7 @@ import {
   getComposerStep,
   getComposeSelectedContacts,
   getConversationByIdSelector,
+  getConversationsByTitleSelector,
   getConversationSelector,
   getFilteredCandidateContactsForNewGroup,
   getFilteredComposeContacts,
@@ -1751,6 +1752,35 @@ describe('both/state/selectors/conversations', () => {
         contact => contact.title
       );
       assert.deepEqual(titles, ['Person Two', 'Person One']);
+    });
+  });
+
+  describe('#getConversationsByTitleSelector', () => {
+    it('returns a selector that finds conversations by title', () => {
+      const state = {
+        ...getEmptyRootState(),
+        conversations: {
+          ...getEmptyState(),
+          conversationLookup: {
+            abc: { ...makeConversation('abc'), title: 'Janet' },
+            def: { ...makeConversation('def'), title: 'Janet' },
+            geh: { ...makeConversation('geh'), title: 'Rick' },
+          },
+        },
+      };
+
+      const selector = getConversationsByTitleSelector(state);
+
+      assert.sameMembers(
+        selector('Janet').map(c => c.id),
+        ['abc', 'def']
+      );
+      assert.sameMembers(
+        selector('Rick').map(c => c.id),
+        ['geh']
+      );
+      assert.isEmpty(selector('abc'));
+      assert.isEmpty(selector('xyz'));
     });
   });
 

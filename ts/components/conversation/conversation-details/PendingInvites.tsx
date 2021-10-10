@@ -17,9 +17,7 @@ export type PropsType = {
   readonly conversation?: ConversationType;
   readonly i18n: LocalizerType;
   readonly ourConversationId?: string;
-  readonly pendingApprovalMemberships: ReadonlyArray<
-    GroupV2RequestingMembership
-  >;
+  readonly pendingApprovalMemberships: ReadonlyArray<GroupV2RequestingMembership>;
   readonly pendingMemberships: ReadonlyArray<GroupV2PendingMembership>;
   readonly approvePendingMembership: (conversationId: string) => void;
   readonly revokePendingMemberships: (conversationIds: Array<string>) => void;
@@ -68,9 +66,10 @@ export const PendingInvites: React.ComponentType<PropsType> = ({
   }
 
   const [selectedTab, setSelectedTab] = React.useState(Tab.Requests);
-  const [stagedMemberships, setStagedMemberships] = React.useState<Array<
-    StagedMembershipType
-  > | null>(null);
+  const [
+    stagedMemberships,
+    setStagedMemberships,
+  ] = React.useState<Array<StagedMembershipType> | null>(null);
 
   return (
     <div className="conversation-details-panel">

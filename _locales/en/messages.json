@@ -1414,8 +1414,8 @@
     "description": "Header for general options on the settings screen"
   },
   "spellCheckDescription": {
-    "message": "Enable spell check of text entered in message composition box",
-    "description": "Description of the media permission description"
+    "message": "Enable spell check",
+    "description": "Description of the spell check setting"
   },
   "spellCheckWillBeEnabled": {
     "message": "Spell check will be enabled the next time Signal starts.",
@@ -1444,6 +1444,10 @@
   "linkPreviews": {
     "message": "Link Previews",
     "description": "Label for setting to send link previews"
+  },
+  "autoLaunchDescription": {
+    "message": "Open at computer login",
+    "description": "Description for the automatic launch setting"
   },
   "clearDataHeader": {
     "message": "Clear Data",
@@ -3028,8 +3032,8 @@
       }
     }
   },
-  "ConversationHero--membership-1": {
-    "message": "Member of $group$.",
+  "member-of-1-group": {
+    "message": "Member of $group$",
     "description": "Shown in the conversation hero to indicate this user is a member of a mutual group",
     "placeholders": {
       "group": {
@@ -3038,8 +3042,8 @@
       }
     }
   },
-  "ConversationHero--membership-2": {
-    "message": "Member of $group1$ and $group2$.",
+  "member-of-2-groups": {
+    "message": "Member of $group1$ and $group2$",
     "description": "Shown in the conversation hero to indicate this user is a member of at least two mutual groups",
     "placeholders": {
       "group1": {
@@ -3052,8 +3056,8 @@
       }
     }
   },
-  "ConversationHero--membership-3": {
-    "message": "Member of $group1$, $group2$, and $group3$.",
+  "member-of-3-groups": {
+    "message": "Member of $group1$, $group2$, and $group3$",
     "description": "Shown in the conversation hero to indicate this user is a member of at least three mutual groups",
     "placeholders": {
       "group1": {
@@ -3070,8 +3074,8 @@
       }
     }
   },
-  "ConversationHero--membership-extra": {
-    "message": "Member of $group1$, $group2$, $group3$ and $remainingCount$ more.",
+  "member-of-more-than-3-groups": {
+    "message": "Member of $group1$, $group2$, $group3$ and $remainingCount$ more",
     "description": "Shown in the conversation hero to indicate this user is a member of at least three mutual groups",
     "placeholders": {
       "group1": {
@@ -3103,7 +3107,7 @@
     }
   },
   "no-groups-in-common": {
-    "message": "No groups in common.",
+    "message": "No groups in common",
     "description": "Shown to indicate this user is not a member of any groups"
   },
   "no-groups-in-common-warning": {
