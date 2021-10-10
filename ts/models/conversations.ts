@@ -9,6 +9,7 @@ import {
   MessageModelCollectionType,
   WhatIsThis,
   MessageAttributesType,
+  ReactionModelType,
   ConversationAttributesType,
   VerificationOptions,
 } from '../model-types.d';
@@ -22,6 +23,7 @@ import { ConversationType } from '../state/ducks/conversations';
 import { ColorType } from '../types/Colors';
 import { MessageModel } from './messages';
 import { isMuted } from '../util/isMuted';
+import { isConversationSMSOnly } from '../util/isConversationSMSOnly';
 import { isConversationUnregistered } from '../util/isConversationUnregistered';
 import { missingCaseError } from '../util/missingCaseError';
 import { sniffImageMimeType } from '../util/sniffImageMimeType';
@@ -47,6 +49,8 @@ import { markConversationRead } from '../util/markConversationRead';
 import { handleMessageSend } from '../util/handleMessageSend';
 import { getConversationMembers } from '../util/getConversationMembers';
 import { sendReadReceiptsFor } from '../util/sendReadReceiptsFor';
+import { updateConversationsWithUuidLookup } from '../updateConversationsWithUuidLookup';
+import { filter, map, take } from '../util/iterables';
 
 /* eslint-disable more/no-then */
 window.Whisper = window.Whisper || {};
@@ -87,6 +91,11 @@ const COLORS = [
 ];
 
 const THREE_HOURS = 3 * 60 * 60 * 1000;
+const FIVE_MINUTES = 1000 * 60 * 5;
+
+const ATTRIBUTES_THAT_DONT_INVALIDATE_PROPS_CACHE = new Set([
+  'profileLastFetchedAt',
+]);
 
 type CustomError = Error & {
   identifier?: string;
@@ -139,6 +148,8 @@ export class ConversationModel extends window.Backbone
 
   throttledBumpTyping: unknown;
 
+  throttledFetchSMSOnlyUUID?: () => Promise<void> | void;
+
   typingRefreshTimer?: NodeJS.Timer | null;
 
   typingPauseTimer?: NodeJS.Timer | null;
@@ -152,6 +163,8 @@ export class ConversationModel extends window.Backbone
   private cachedLatestGroupCallEraId?: string;
 
   private cachedIdenticon?: CachedIdenticon;
+
+  private isFetchingUUID?: boolean;
 
   // eslint-disable-next-line class-methods-use-this
   defaults(): Partial<ConversationAttributesType> {
@@ -275,11 +288,31 @@ export class ConversationModel extends window.Backbone
     // We clear our cached props whenever we change so that the next call to format() will
     //   result in refresh via a getProps() call. See format() below.
     this.on('change', () => {
+      const changedKeys = Object.keys(this.changed || {});
+      const isPropsCacheStillValid = Boolean(
+        changedKeys.length &&
+          changedKeys.every(key =>
+            ATTRIBUTES_THAT_DONT_INVALIDATE_PROPS_CACHE.has(key)
+          )
+      );
+      if (isPropsCacheStillValid) {
+        return;
+      }
+
       if (this.cachedProps) {
         this.oldCachedProps = this.cachedProps;
       }
       this.cachedProps = null;
     });
+
+    // Set `isFetchingUUID` eagerly to avoid UI flicker when opening the
+    // conversation for the first time.
+    this.isFetchingUUID = this.isSMSOnly();
+
+    this.throttledFetchSMSOnlyUUID = window._.throttle(
+      this.fetchSMSOnlyUUID,
+      FIVE_MINUTES
+    );
   }
 
   isMe(): boolean {
@@ -762,6 +795,13 @@ export class ConversationModel extends window.Backbone
     return isConversationUnregistered(this.attributes);
   }
 
+  isSMSOnly(): boolean {
+    return isConversationSMSOnly({
+      ...this.attributes,
+      type: this.isPrivate() ? 'direct' : 'unknown',
+    });
+  }
+
   setUnregistered(): void {
     window.log.info(`Conversation ${this.idForLogging()} is now unregistered`);
     this.set({
@@ -984,6 +1024,45 @@ export class ConversationModel extends window.Backbone
     await window.Signal.Groups.waitThenMaybeUpdateGroup({
       conversation: this,
     });
+  }
+
+  async fetchSMSOnlyUUID(): Promise<void> {
+    const { messaging } = window.textsecure;
+    if (!messaging) {
+      return;
+    }
+    if (!this.isSMSOnly()) {
+      return;
+    }
+
+    window.log.info(
+      `Fetching uuid for a sms-only conversation ${this.idForLogging()}`
+    );
+
+    this.isFetchingUUID = true;
+    this.trigger('change', this);
+
+    try {
+      // Attempt to fetch UUID
+      await updateConversationsWithUuidLookup({
+        conversationController: window.ConversationController,
+        conversations: [this],
+        messaging,
+      });
+    } finally {
+      // No redux update here
+      this.isFetchingUUID = false;
+      this.trigger('change', this);
+
+      window.log.info(
+        `Done fetching uuid for a sms-only conversation ${this.idForLogging()}`
+      );
+    }
+
+    // On successful fetch - mark contact as registered.
+    if (this.get('uuid')) {
+      this.setRegistered();
+    }
   }
 
   isValid(): boolean {
@@ -1273,6 +1352,8 @@ export class ConversationModel extends window.Backbone
   //   maintains a cache, and protects against reentrant calls.
   // Note: When writing code inside this function, do not call .format() on a conversation
   //   unless you are sure that it's not this very same conversation.
+  // Note: If you start relying on an attribute that is in
+  //   `ATTRIBUTES_THAT_DONT_INVALIDATE_PROPS_CACHE`, remove it from that list.
   private getProps(): ConversationType {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const color = this.getColor()!;
@@ -1357,6 +1438,7 @@ export class ConversationModel extends window.Backbone
       isPinned: this.get('isPinned'),
       isUntrusted: this.isUntrusted(),
       isVerified: this.isVerified(),
+      isFetchingUUID: this.isFetchingUUID,
       lastMessage: {
         status: this.get('lastMessageStatus')!,
         text: this.get('lastMessage')!,
@@ -2791,53 +2873,54 @@ export class ConversationModel extends window.Backbone
     sticker: WhatIsThis
   ): Promise<WhatIsThis> {
     if (attachments && attachments.length) {
-      return Promise.all(
-        attachments
-          .filter(
-            attachment => attachment && !attachment.pending && !attachment.error
-          )
-          .slice(0, 1)
-          .map(async attachment => {
-            const { fileName, thumbnail, contentType } = attachment;
+      const validAttachments = filter(
+        attachments,
+        attachment => attachment && !attachment.pending && !attachment.error
+      );
+      const attachmentsToUse = take(validAttachments, 1);
 
-            return {
-              contentType,
-              // Our protos library complains about this field being undefined, so we
-              //   force it to null
-              fileName: fileName || null,
-              thumbnail: thumbnail
-                ? {
-                    ...(await loadAttachmentData(thumbnail)),
-                    objectUrl: getAbsoluteAttachmentPath(thumbnail.path),
-                  }
-                : null,
-            };
-          })
+      return Promise.all(
+        map(attachmentsToUse, async attachment => {
+          const { fileName, thumbnail, contentType } = attachment;
+
+          return {
+            contentType,
+            // Our protos library complains about this field being undefined, so we force
+            //   it to null
+            fileName: fileName || null,
+            thumbnail: thumbnail
+              ? {
+                  ...(await loadAttachmentData(thumbnail)),
+                  objectUrl: getAbsoluteAttachmentPath(thumbnail.path),
+                }
+              : null,
+          };
+        })
       );
     }
 
     if (preview && preview.length) {
-      return Promise.all(
-        preview
-          .filter(item => item && item.image)
-          .slice(0, 1)
-          .map(async attachment => {
-            const { image } = attachment;
-            const { contentType } = image;
+      const validPreviews = filter(preview, item => item && item.image);
+      const previewsToUse = take(validPreviews, 1);
 
-            return {
-              contentType,
-              // Our protos library complains about this field being undefined, so we
-              //   force it to null
-              fileName: null,
-              thumbnail: image
-                ? {
-                    ...(await loadAttachmentData(image)),
-                    objectUrl: getAbsoluteAttachmentPath(image.path),
-                  }
-                : null,
-            };
-          })
+      return Promise.all(
+        map(previewsToUse, async attachment => {
+          const { image } = attachment;
+          const { contentType } = image;
+
+          return {
+            contentType,
+            // Our protos library complains about this field being undefined, so we
+            //   force it to null
+            fileName: null,
+            thumbnail: image
+              ? {
+                  ...(await loadAttachmentData(image)),
+                  objectUrl: getAbsoluteAttachmentPath(image.path),
+                }
+              : null,
+          };
+        })
       );
     }
 
@@ -3067,6 +3150,11 @@ export class ConversationModel extends window.Backbone
       fromSync: true,
     });
 
+    // Apply reaction optimistically
+    const oldReaction = await window.Whisper.Reactions.onReaction(
+      reactionModel
+    );
+
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const destination = this.getSendTarget()!;
     const recipients = this.getRecipients();
@@ -3176,9 +3264,23 @@ export class ConversationModel extends window.Backbone
         throw new Error('No successful delivery for reaction');
       }
 
-      window.Whisper.Reactions.onReaction(reactionModel);
-
       return result;
+    }).catch(() => {
+      let reverseReaction: ReactionModelType;
+      if (oldReaction) {
+        // Either restore old reaction
+        reverseReaction = window.Whisper.Reactions.add({
+          ...oldReaction,
+          fromId: window.ConversationController.getOurConversationId(),
+          timestamp,
+        });
+      } else {
+        // Or remove a new one on failure
+        reverseReaction = reactionModel.clone();
+        reverseReaction.set('remove', !reverseReaction.get('remove'));
+      }
+
+      window.Whisper.Reactions.onReaction(reverseReaction);
     });
   }
 
@@ -3771,9 +3873,6 @@ export class ConversationModel extends window.Backbone
     if (this.isPrivate()) {
       model.set({ destination: this.getSendTarget() });
     }
-    if (model.isOutgoing()) {
-      model.set({ recipients: this.getRecipients() });
-    }
     const id = await window.Signal.Data.saveMessage(model.attributes, {
       Message: window.Whisper.Message,
     });
@@ -3860,7 +3959,6 @@ export class ConversationModel extends window.Backbone
       //   indicator above it. We set it to 'unread' to trigger that placement.
       unread: 1,
       conversationId: this.id,
-      // No type; 'incoming' messages are specially treated by conversation.markRead()
       sent_at: timestamp,
       received_at: window.Signal.Util.incrementMessageCounter(),
       received_at_ms: timestamp,
@@ -3869,9 +3967,6 @@ export class ConversationModel extends window.Backbone
 
     if (this.isPrivate()) {
       model.set({ destination: this.id });
-    }
-    if (model.isOutgoing()) {
-      model.set({ recipients: this.getRecipients() });
     }
     const id = await window.Signal.Data.saveMessage(model.attributes, {
       Message: window.Whisper.Message,

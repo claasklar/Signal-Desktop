@@ -1412,7 +1412,7 @@
         "description": "Header for general options on the settings screen"
     },
     "spellCheckDescription": {
-        "message": "Enable spell check",
+        "message": "เปิดใช้การตรวจตัวสะกด",
         "description": "Description of the spell check setting"
     },
     "spellCheckWillBeEnabled": {
@@ -1424,7 +1424,7 @@
         "description": "Shown when the user disables spellcheck to indicate that they must restart Signal."
     },
     "autoLaunchDescription": {
-        "message": "Open at computer login",
+        "message": "เปิดเมื่อลงชื่อเข้าใช้คอมพิวเตอร์",
         "description": "Description for the automatic launch setting"
     },
     "clearDataHeader": {
@@ -1542,7 +1542,7 @@
         "description": "Shown on outgoing message if it fails to send"
     },
     "sendPaused": {
-        "message": "Send paused",
+        "message": "การส่งถูกพักชั่วคราว",
         "description": "Shown on outgoing message if it cannot be sent immediately"
     },
     "partiallySent": {
@@ -3102,7 +3102,7 @@
         "description": "Shown to indicate this user is not a member of any groups"
     },
     "no-groups-in-common-warning": {
-        "message": "No groups in common. Review requests carefully.",
+        "message": "ไม่มีกลุ่มที่เหมือนกันเลย โปรดพิจารณาคำขออย่างระวัง",
         "description": "When a user has no common groups, show this warning"
     },
     "acceptCall": {
@@ -5106,15 +5106,15 @@
         "description": "Shown on the message request warning. Clicking this button will open a dialog with more information"
     },
     "MessageRequestWarning__dialog__details": {
-        "message": "You have no groups in common with this person. Review requests carefully before accepting to avoid unwanted messages.",
+        "message": "คุณไม่ได้อยู่ในกลุ่มใดที่เหมือนกับบุคคลนี้เลย โปรดพิจารณาคำขออย่างถี่ถ้วน ก่อนจะยอมรับ เพื่อเลี่ยงข้อความไม่พึงประสงค์",
         "description": "Shown in the message request warning dialog. Gives more information about message requests"
     },
     "MessageRequestWarning__dialog__learn-even-more": {
-        "message": "About Message Requests",
+        "message": "เกี่ยวกับคำขอส่งข้อความ",
         "description": "Shown in the message request warning dialog. Clicking this button will open a page on Signal's support site"
     },
     "ContactSpoofing__same-name": {
-        "message": "Review requests carefully. Signal found another contact with the same name. $link$",
+        "message": "โปรดพิจารณาคำขออย่างระวังถี่ถ้วน Signal พบผู้ติดต่ออีกรายการที่มีชื่อเหมือนกัน $link$",
         "description": "Shown in the timeline warning when you have a message request from someone with the same name as someone else",
         "placeholders": {
             "link": {
@@ -5124,11 +5124,11 @@
         }
     },
     "ContactSpoofing__same-name__link": {
-        "message": "Review request",
+        "message": "พิจารณาคำขอ",
         "description": "Shown in the timeline warning when you have a message request from someone with the same name as someone else"
     },
     "ContactSpoofingReviewDialog__title": {
-        "message": "Review request",
+        "message": "พิจารณาคำขอ",
         "description": "Title for the contact name spoofing review dialog"
     },
     "ContactSpoofingReviewDialog__description": {
@@ -5144,39 +5144,39 @@
         "description": "Header in the contact spoofing review dialog, shown above the \"safe\" user"
     },
     "CaptchaDialog__title": {
-        "message": "Verify to continue messaging",
+        "message": "ตรวจยืนยันเพื่อรับส่งข้อความต่อ",
         "description": "Header in the captcha dialog"
     },
     "CaptchaDialog__first-paragraph": {
-        "message": "To help prevent spam on Signal, please complete verification.",
+        "message": "เพื่อช่วยป้องกันสแปมบน Signal โปรดตรวจยืนยันให้สำเร็จ",
         "description": "First paragraph in the captcha dialog"
     },
     "CaptchaDialog__second-paragraph": {
-        "message": "After verifying, you can continue messaging. Any paused messages will automatically be sent.",
+        "message": "หลังตรวจยืนยัน คุณจะรับส่งข้อความได้ต่อ ข้อความใดๆ ที่ถูกพักอยู่ชั่วคราว จะถูกส่งโดยอัตโนมัติ",
         "description": "First paragraph in the captcha dialog"
     },
     "CaptchaDialog--can-close__title": {
-        "message": "Continue Without Verifying?",
+        "message": "ทำต่อโดยไม่ตรวจยืนยันหรือไม่?",
         "description": "Header in the captcha dialog that can be closed"
     },
     "CaptchaDialog--can-close__body": {
-        "message": "If you choose to skip verification, you may miss messages from other people and your messages may fail to send.",
+        "message": "ถ้าคุณเลือกที่จะข้ามการตรวจยืนยัน คุณอาจพลาดข้อความจากคนอื่น และข้อความของคุณอาจส่งไม่ได้",
         "description": "Body of the captcha dialog that can be closed"
     },
     "CaptchaDialog--can_close__skip-verification": {
-        "message": "Skip verification",
+        "message": "ข้ามการตรวจยืนยัน",
         "description": "Skip button of the captcha dialog that can be closed"
     },
     "verificationComplete": {
-        "message": "Verification complete.",
+        "message": "การตรวจยืนยันเสร็จสิ้น",
         "description": "Displayed after successful captcha"
     },
     "verificationFailed": {
-        "message": "Verification failed. Please retry later.",
+        "message": "การตรวจยืนยันล้มเหลว กรุณาลองใหม่ภายหลัง",
         "description": "Displayed after unsuccessful captcha"
     },
     "deleteForEveryoneFailed": {
-        "message": "Failed to delete message for everyone. Please retry later.",
+        "message": "การลบข้อความสำหรับทุกคนไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
         "description": "Displayed when delete-for-everyone has failed to send to all recepients"
     }
 }

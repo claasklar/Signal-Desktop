@@ -3,18 +3,31 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { assert } from 'chai';
-import { Direction, SessionRecord } from 'libsignal-client';
+import chai, { assert } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import {
+  Direction,
+  SenderKeyRecord,
+  SessionRecord,
+} from '@signalapp/signal-client';
 
 import { signal } from '../protobuf/compiled';
 import { sessionStructureToArrayBuffer } from '../util/sessionTranslation';
+import { Zone } from '../util/Zone';
 
 import { getRandomBytes, constantTimeEqual } from '../Crypto';
 import { clampPrivateKey, setPublicKeyTypeByte } from '../Curve';
-import { SignalProtocolStore } from '../SignalProtocolStore';
+import { SignalProtocolStore, GLOBAL_ZONE } from '../SignalProtocolStore';
 import { IdentityKeyType, KeyPairType } from '../textsecure/Types.d';
 
-const { RecordStructure, SessionStructure } = signal.proto.storage;
+chai.use(chaiAsPromised);
+
+const {
+  RecordStructure,
+  SessionStructure,
+  SenderKeyRecordStructure,
+  SenderKeyStateStructure,
+} = signal.proto.storage;
 
 describe('SignalProtocolStore', () => {
   const number = '+5558675309';
@@ -44,6 +57,41 @@ describe('SignalProtocolStore', () => {
 
     return SessionRecord.deserialize(
       Buffer.from(sessionStructureToArrayBuffer(proto))
+    );
+  }
+
+  function getSenderKeyRecord(): SenderKeyRecord {
+    const proto = new SenderKeyRecordStructure();
+
+    const state = new SenderKeyStateStructure();
+
+    state.senderKeyId = 4;
+
+    const senderChainKey = new SenderKeyStateStructure.SenderChainKey();
+
+    senderChainKey.iteration = 10;
+    senderChainKey.seed = toUint8Array(getPublicKey());
+    state.senderChainKey = senderChainKey;
+
+    const senderSigningKey = new SenderKeyStateStructure.SenderSigningKey();
+    senderSigningKey.public = toUint8Array(getPublicKey());
+    senderSigningKey.private = toUint8Array(getPrivateKey());
+
+    state.senderSigningKey = senderSigningKey;
+
+    state.senderMessageKeys = [];
+    const messageKey = new SenderKeyStateStructure.SenderMessageKey();
+    messageKey.iteration = 234;
+    messageKey.seed = toUint8Array(getPublicKey());
+    state.senderMessageKeys.push(messageKey);
+
+    proto.senderKeyStates = [];
+    proto.senderKeyStates.push(state);
+
+    return SenderKeyRecord.deserialize(
+      Buffer.from(
+        signal.proto.storage.SenderKeyRecordStructure.encode(proto).finish()
+      )
     );
   }
 
@@ -106,6 +154,49 @@ describe('SignalProtocolStore', () => {
 
       assert.isTrue(constantTimeEqual(key.pubKey, identityKey.pubKey));
       assert.isTrue(constantTimeEqual(key.privKey, identityKey.privKey));
+    });
+  });
+
+  describe('senderKeys', () => {
+    it('roundtrips in memory', async () => {
+      const distributionId = window.getGuid();
+      const expected = getSenderKeyRecord();
+
+      const deviceId = 1;
+      const encodedAddress = `${number}.${deviceId}`;
+
+      await store.saveSenderKey(encodedAddress, distributionId, expected);
+
+      const actual = await store.getSenderKey(encodedAddress, distributionId);
+      if (!actual) {
+        throw new Error('getSenderKey returned nothing!');
+      }
+
+      assert.isTrue(
+        constantTimeEqual(expected.serialize(), actual.serialize())
+      );
+    });
+
+    it('roundtrips through database', async () => {
+      const distributionId = window.getGuid();
+      const expected = getSenderKeyRecord();
+
+      const deviceId = 1;
+      const encodedAddress = `${number}.${deviceId}`;
+
+      await store.saveSenderKey(encodedAddress, distributionId, expected);
+
+      // Re-fetch from the database to ensure we get the latest database value
+      await store.hydrateCaches();
+
+      const actual = await store.getSenderKey(encodedAddress, distributionId);
+      if (!actual) {
+        throw new Error('getSenderKey returned nothing!');
+      }
+
+      assert.isTrue(
+        constantTimeEqual(expected.serialize(), actual.serialize())
+      );
     });
   });
 
@@ -1146,7 +1237,7 @@ describe('SignalProtocolStore', () => {
       await store.removeAllSessions(number);
 
       const records = await Promise.all(
-        devices.map(store.loadSession.bind(store))
+        devices.map(device => store.loadSession(device))
       );
 
       for (let i = 0, max = records.length; i < max; i += 1) {
@@ -1186,6 +1277,138 @@ describe('SignalProtocolStore', () => {
     it('returns empty array for a number with no device ids', async () => {
       const deviceIds = await store.getDeviceIds('foo');
       assert.sameMembers(deviceIds, []);
+    });
+  });
+
+  describe('zones', () => {
+    const zone = new Zone('zone', {
+      pendingSessions: true,
+      pendingUnprocessed: true,
+    });
+
+    beforeEach(async () => {
+      await store.removeAllUnprocessed();
+      await store.removeAllSessions(number);
+    });
+
+    it('should not store pending sessions in global zone', async () => {
+      const id = `${number}.1`;
+      const testRecord = getSessionRecord();
+
+      await assert.isRejected(
+        store.withZone(GLOBAL_ZONE, 'test', async () => {
+          await store.storeSession(id, testRecord);
+          throw new Error('Failure');
+        }),
+        'Failure'
+      );
+
+      assert.equal(await store.loadSession(id), testRecord);
+    });
+
+    it('commits session stores and unprocessed on success', async () => {
+      const id = `${number}.1`;
+      const testRecord = getSessionRecord();
+
+      await store.withZone(zone, 'test', async () => {
+        await store.storeSession(id, testRecord, { zone });
+
+        await store.addUnprocessed(
+          {
+            id: '2-two',
+            envelope: 'second',
+            timestamp: 2,
+            version: 2,
+            attempts: 0,
+          },
+          { zone }
+        );
+        assert.equal(await store.loadSession(id, { zone }), testRecord);
+      });
+
+      assert.equal(await store.loadSession(id), testRecord);
+
+      const allUnprocessed = await store.getAllUnprocessed();
+      assert.deepEqual(
+        allUnprocessed.map(({ envelope }) => envelope),
+        ['second']
+      );
+    });
+
+    it('reverts session stores and unprocessed on error', async () => {
+      const id = `${number}.1`;
+      const testRecord = getSessionRecord();
+      const failedRecord = getSessionRecord();
+
+      await store.storeSession(id, testRecord);
+      assert.equal(await store.loadSession(id), testRecord);
+
+      await assert.isRejected(
+        store.withZone(zone, 'test', async () => {
+          await store.storeSession(id, failedRecord, { zone });
+          assert.equal(await store.loadSession(id, { zone }), failedRecord);
+
+          await store.addUnprocessed(
+            {
+              id: '2-two',
+              envelope: 'second',
+              timestamp: 2,
+              version: 2,
+              attempts: 0,
+            },
+            { zone }
+          );
+
+          throw new Error('Failure');
+        }),
+        'Failure'
+      );
+
+      assert.equal(await store.loadSession(id), testRecord);
+      assert.deepEqual(await store.getAllUnprocessed(), []);
+    });
+
+    it('can be re-entered', async () => {
+      const id = `${number}.1`;
+      const testRecord = getSessionRecord();
+
+      await store.withZone(zone, 'test', async () => {
+        await store.withZone(zone, 'nested', async () => {
+          await store.storeSession(id, testRecord, { zone });
+
+          assert.equal(await store.loadSession(id, { zone }), testRecord);
+        });
+
+        assert.equal(await store.loadSession(id, { zone }), testRecord);
+      });
+
+      assert.equal(await store.loadSession(id), testRecord);
+    });
+
+    it('can be re-entered after waiting', async () => {
+      const a = new Zone('a');
+      const b = new Zone('b');
+
+      const order: Array<number> = [];
+      const promises: Array<Promise<unknown>> = [];
+
+      // What happens below is briefly following:
+      // 1. We enter zone "a"
+      // 2. We wait for zone "a" to be left to enter zone "b"
+      // 3. Skip few ticks to trigger leave of zone "a" and resolve the waiting
+      //    queue promise for zone "b"
+      // 4. Enter zone "a" while resolution was the promise above is queued in
+      //    microtasks queue.
+
+      promises.push(store.withZone(a, 'a', async () => order.push(1)));
+      promises.push(store.withZone(b, 'b', async () => order.push(2)));
+      await Promise.resolve();
+      await Promise.resolve();
+      promises.push(store.withZone(a, 'a again', async () => order.push(3)));
+
+      await Promise.all(promises);
+
+      assert.deepEqual(order, [1, 2, 3]);
     });
   });
 

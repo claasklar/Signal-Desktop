@@ -4,7 +4,7 @@
   "description": "Private messaging from your desktop",
   "desktopName": "signal.desktop",
   "repository": "https://github.com/signalapp/Signal-Desktop.git",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "license": "AGPL-3.0-only",
   "author": {
     "name": "Open Whisper Systems",
@@ -67,6 +67,7 @@
     "fs-xattr": "0.3.0"
   },
   "dependencies": {
+    "@signalapp/signal-client": "0.5.2",
     "@sindresorhus/is": "0.8.0",
     "@types/pino": "6.3.6",
     "@types/pino-multi-stream": "5.1.0",
@@ -101,10 +102,10 @@
     "intl-tel-input": "12.1.15",
     "jquery": "3.5.0",
     "js-yaml": "3.13.1",
-    "libsignal-client": "https://github.com/signalapp/libsignal-client-node.git#afa8f40eaa218b7fff94278d9b2ab2e13a2ee04b",
     "linkify-it": "2.2.0",
     "lodash": "4.17.21",
     "lru-cache": "6.0.0",
+    "mac-screen-capture-permissions": "2.0.0",
     "memoizee": "0.4.14",
     "mkdirp": "0.5.2",
     "moment": "2.29.1",
@@ -146,7 +147,7 @@
     "redux-ts-utils": "3.2.2",
     "reselect": "4.0.0",
     "rimraf": "2.6.2",
-    "ringrtc": "https://github.com/signalapp/signal-ringrtc-node.git#b43c6b728d62b6d386d95705e128f32f44edb650",
+    "ringrtc": "https://github.com/signalapp/signal-ringrtc-node.git#17b22fc9d47605867608193202c54be06bce6f56",
     "rotating-file-stream": "2.1.5",
     "sanitize-filename": "1.6.3",
     "sanitize.css": "11.0.0",
@@ -179,7 +180,8 @@
     "@types/backbone": "1.4.3",
     "@types/better-sqlite3": "5.4.1",
     "@types/blueimp-load-image": "5.14.1",
-    "@types/chai": "4.1.2",
+    "@types/chai": "4.2.18",
+    "@types/chai-as-promised": "7.1.4",
     "@types/classnames": "2.2.3",
     "@types/config": "0.0.34",
     "@types/dashdash": "1.14.0",
@@ -231,7 +233,8 @@
     "babel-core": "7.0.0-bridge.0",
     "babel-loader": "8.0.6",
     "babel-plugin-lodash": "3.3.4",
-    "chai": "4.1.2",
+    "chai": "4.3.4",
+    "chai-as-promised": "7.1.1",
     "core-js": "2.6.9",
     "cross-env": "5.2.0",
     "css-loader": "3.2.0",
@@ -282,7 +285,13 @@
     "webpack-dev-server": "3.11.2"
   },
   "resolutions": {
-    "@storybook/react/@storybook/core/node-fetch": "2.6.1"
+    "@storybook/react/@storybook/core/node-fetch": "2.6.1",
+    "fast-glob/glob-parent": "5.1.2",
+    "read-last-lines/mz/thenify-all/thenify": "3.3.1",
+    "sharp/color/color-string": "1.5.5",
+    "zkgroup/ref-napi/node-addon-api": "2.0.1",
+    "zkgroup/ffi-napi/ref-napi/node-addon-api": "2.0.1",
+    "zkgroup/ref-array-napi/ref-napi/node-addon-api": "2.0.1"
   },
   "engines": {
     "node": "14.16.0"
@@ -293,7 +302,8 @@
       "asarUnpack": [
         "**/*.node",
         "node_modules/zkgroup/libzkgroup.*",
-        "node_modules/libsignal-client/build/*.node"
+        "node_modules/@signalapp/signal-client/build/*.node",
+        "node_modules/mac-screen-capture-permissions/build/Release/*.node"
       ],
       "artifactName": "${name}-mac-${version}.${ext}",
       "category": "public.app-category.social-networking",
@@ -319,7 +329,7 @@
         "node_modules/spellchecker/vendor/hunspell_dictionaries",
         "node_modules/sharp",
         "node_modules/zkgroup/libzkgroup.*",
-        "node_modules/libsignal-client/build/*.node"
+        "node_modules/@signalapp/signal-client/build/*.node"
       ],
       "artifactName": "${name}-win-${version}.${ext}",
       "certificateSubjectName": "Signal (Quiet Riddle Ventures, LLC)",
@@ -349,7 +359,7 @@
         "node_modules/spellchecker/vendor/hunspell_dictionaries",
         "node_modules/sharp",
         "node_modules/zkgroup/libzkgroup.*",
-        "node_modules/libsignal-client/build/*.node"
+        "node_modules/@signalapp/signal-client/build/*.node"
       ],
       "target": [
         "deb"
@@ -383,6 +393,7 @@
       "config/local-${env.SIGNAL_ENV}.json",
       "background.html",
       "about.html",
+      "screenShare.html",
       "settings.html",
       "permissions_popup.html",
       "debug_log.html",
@@ -399,6 +410,7 @@
       "preload.bundle.js",
       "preload_utils.js",
       "about_preload.js",
+      "screenShare_preload.js",
       "settings_preload.js",
       "permissions_popup_preload.js",
       "debug_log_preload.js",
@@ -437,8 +449,9 @@
       "!node_modules/better-sqlite3/deps/*",
       "!node_modules/better-sqlite3/src/*",
       "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
-      "node_modules/libsignal-client/build/*${platform}*.node",
+      "node_modules/@signalapp/signal-client/build/*${platform}*.node",
       "node_modules/ringrtc/build/${platform}/**",
+      "node_modules/mac-screen-capture-permissions/build/Release/*.node",
       "!**/node_modules/ffi-napi/deps",
       "!**/node_modules/react-dom/*/*.development.js",
       "!node_modules/.cache"

@@ -66,6 +66,16 @@ export type ClientSearchResultMessageType = MessageType & {
   bodyRanges: [];
   snippet: string;
 };
+export type SenderKeyType = {
+  // Primary key
+  id: string;
+  // These two are combined into one string to give us the final id
+  senderId: string;
+  distributionId: string;
+  // Raw data to serialize/deserialize into signal-client SenderKeyRecord
+  data: Buffer;
+  lastUpdatedDate: number;
+};
 export type SessionType = {
   id: string;
   conversationId: string;
@@ -121,11 +131,11 @@ export type UnprocessedType = {
   timestamp: number;
   version: number;
   attempts: number;
-  envelope: string;
+  envelope?: string;
 
   source?: string;
   sourceUuid?: string;
-  sourceDevice?: string;
+  sourceDevice?: number;
   serverTimestamp?: number;
   decrypted?: string;
 };
@@ -171,8 +181,17 @@ export type DataInterface = {
   removeAllItems: () => Promise<void>;
   getAllItems: () => Promise<Array<ItemType>>;
 
+  createOrUpdateSenderKey: (key: SenderKeyType) => Promise<void>;
+  getSenderKeyById: (id: string) => Promise<SenderKeyType | undefined>;
+  removeAllSenderKeys: () => Promise<void>;
+  getAllSenderKeys: () => Promise<Array<SenderKeyType>>;
+
   createOrUpdateSession: (data: SessionType) => Promise<void>;
   createOrUpdateSessions: (array: Array<SessionType>) => Promise<void>;
+  commitSessionsAndUnprocessed(options: {
+    sessions: Array<SessionType>;
+    unprocessed: Array<UnprocessedType>;
+  }): Promise<void>;
   getSessionById: (id: string) => Promise<SessionType | undefined>;
   getSessionsById: (conversationId: string) => Promise<Array<SessionType>>;
   bulkAddSessions: (array: Array<SessionType>) => Promise<void>;
@@ -210,6 +229,7 @@ export type DataInterface = {
     obsoleteId: string,
     currentId: string
   ) => Promise<void>;
+  getNextTapToViewMessageTimestampToAgeOut: () => Promise<undefined | number>;
 
   getUnprocessedCount: () => Promise<number>;
   getAllUnprocessed: () => Promise<Array<UnprocessedType>>;
@@ -340,7 +360,6 @@ export type ServerInterface = DataInterface & {
     ourConversationId: string;
   }) => Promise<MessageType | undefined>;
   getNextExpiringMessage: () => Promise<MessageType | undefined>;
-  getNextTapToViewMessageToAgeOut: () => Promise<MessageType | undefined>;
   getOutgoingWithoutExpiresAt: () => Promise<Array<MessageType>>;
   getTapToViewMessagesNeedingErase: () => Promise<Array<MessageType>>;
   getUnreadCountForConversation: (conversationId: string) => Promise<number>;
@@ -476,9 +495,6 @@ export type ClientInterface = DataInterface & {
     Message: typeof MessageModel;
   }) => Promise<MessageModel | undefined>;
   getNextExpiringMessage: (options: {
-    Message: typeof MessageModel;
-  }) => Promise<MessageModel | null>;
-  getNextTapToViewMessageToAgeOut: (options: {
     Message: typeof MessageModel;
   }) => Promise<MessageModel | null>;
   getOutgoingWithoutExpiresAt: (options: {

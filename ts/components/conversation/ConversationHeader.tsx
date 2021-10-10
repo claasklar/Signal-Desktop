@@ -36,6 +36,7 @@ export type PropsDataType = {
   isMissingMandatoryProfileSharing?: boolean;
   outgoingCallButtonStyle: OutgoingCallButtonStyle;
   showBackButton?: boolean;
+  isSMSOnly?: boolean;
 } & Pick<
   ConversationType,
   | 'acceptedMessageRequest'
@@ -593,7 +594,7 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
   }
 
   public render(): ReactNode {
-    const { id } = this.props;
+    const { id, isSMSOnly } = this.props;
     const { isNarrow } = this.state;
     const triggerId = `conversation-${id}`;
 
@@ -616,7 +617,7 @@ export class ConversationHeader extends React.Component<PropsType, StateType> {
           >
             {this.renderBackButton()}
             {this.renderHeader()}
-            {this.renderOutgoingCallButtons()}
+            {!isSMSOnly && this.renderOutgoingCallButtons()}
             {this.renderSearchButton()}
             {this.renderMoreButton(triggerId)}
             {this.renderMenu(triggerId)}

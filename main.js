@@ -4,7 +4,7 @@
 /* eslint-disable no-console */
 
 const path = require('path');
-const url = require('url');
+const { pathToFileURL } = require('url');
 const os = require('os');
 const fs = require('fs-extra');
 const crypto = require('crypto');
@@ -123,6 +123,7 @@ const {
 } = require('./ts/types/Settings');
 const { Environment } = require('./ts/environment');
 const { ChallengeMainHandler } = require('./ts/main/challengeMain');
+const { maybeParseUrl, setUrlSearchParams } = require('./ts/util/url');
 
 const sql = new MainSQL();
 const challengeHandler = new ChallengeMainHandler();
@@ -228,49 +229,57 @@ const loadLocale = require('./app/locale').load;
 let logger;
 let locale;
 
-function prepareURL(pathSegments, moreKeys) {
-  const parsed = url.parse(path.join(...pathSegments));
+function prepareFileUrl(
+  pathSegments /* : ReadonlyArray<string> */,
+  moreKeys /* : undefined | Record<string, unknown> */
+) /* : string */ {
+  const filePath = path.join(...pathSegments);
+  const fileUrl = pathToFileURL(filePath);
+  return prepareUrl(fileUrl, moreKeys);
+}
 
-  return url.format({
-    ...parsed,
-    protocol: parsed.protocol || 'file:',
-    slashes: true,
-    query: {
-      name: packageJson.productName,
-      locale: locale.name,
-      version: app.getVersion(),
-      buildExpiration: config.get('buildExpiration'),
-      serverUrl: config.get('serverUrl'),
-      storageUrl: config.get('storageUrl'),
-      directoryUrl: config.get('directoryUrl'),
-      directoryEnclaveId: config.get('directoryEnclaveId'),
-      directoryTrustAnchor: config.get('directoryTrustAnchor'),
-      cdnUrl0: config.get('cdn').get('0'),
-      cdnUrl2: config.get('cdn').get('2'),
-      certificateAuthority: config.get('certificateAuthority'),
-      environment: enableCI ? 'production' : config.environment,
-      enableCI: enableCI ? true : undefined,
-      node_version: process.versions.node,
-      hostname: os.hostname(),
-      appInstance: process.env.NODE_APP_INSTANCE,
-      proxyUrl: process.env.HTTPS_PROXY || process.env.https_proxy,
-      contentProxyUrl: config.contentProxyUrl,
-      sfuUrl: config.get('sfuUrl'),
-      importMode: importMode ? true : undefined, // for stringify()
-      reducedMotionSetting: animationSettings.prefersReducedMotion
-        ? true
-        : undefined,
-      serverPublicParams: config.get('serverPublicParams'),
-      serverTrustRoot: config.get('serverTrustRoot'),
-      appStartInitialSpellcheckSetting,
-      ...moreKeys,
-    },
-  });
+function prepareUrl(
+  url /* : URL */,
+  moreKeys = {} /* : undefined | Record<string, unknown> */
+) /* : string */ {
+  return setUrlSearchParams(url, {
+    name: packageJson.productName,
+    locale: locale.name,
+    version: app.getVersion(),
+    buildExpiration: config.get('buildExpiration'),
+    serverUrl: config.get('serverUrl'),
+    storageUrl: config.get('storageUrl'),
+    directoryUrl: config.get('directoryUrl'),
+    directoryEnclaveId: config.get('directoryEnclaveId'),
+    directoryTrustAnchor: config.get('directoryTrustAnchor'),
+    cdnUrl0: config.get('cdn').get('0'),
+    cdnUrl2: config.get('cdn').get('2'),
+    certificateAuthority: config.get('certificateAuthority'),
+    environment: enableCI ? 'production' : config.environment,
+    enableCI: enableCI ? 'true' : '',
+    node_version: process.versions.node,
+    hostname: os.hostname(),
+    appInstance: process.env.NODE_APP_INSTANCE,
+    proxyUrl: process.env.HTTPS_PROXY || process.env.https_proxy,
+    contentProxyUrl: config.contentProxyUrl,
+    sfuUrl: config.get('sfuUrl'),
+    importMode: importMode ? 'true' : '',
+    reducedMotionSetting: animationSettings.prefersReducedMotion ? 'true' : '',
+    serverPublicParams: config.get('serverPublicParams'),
+    serverTrustRoot: config.get('serverTrustRoot'),
+    appStartInitialSpellcheckSetting,
+    ...moreKeys,
+  }).href;
 }
 
 async function handleUrl(event, target) {
   event.preventDefault();
-  const { protocol, hostname } = url.parse(target);
+  const parsedUrl = maybeParseUrl(target);
+  if (!parsedUrl) {
+    return;
+  }
+
+  const { protocol, hostname } = parsedUrl;
   const isDevServer = config.enableHttp && hostname === 'localhost';
   // We only want to specially handle urls that aren't requesting the dev server
   if (isSgnlHref(target) || isSignalHttpsLink(target)) {
@@ -467,13 +476,20 @@ async function createWindow() {
   };
 
   if (config.environment === 'test') {
-    mainWindow.loadURL(prepareURL([__dirname, 'test', 'index.html'], moreKeys));
+    mainWindow.loadURL(
+      prepareFileUrl([__dirname, 'test', 'index.html'], moreKeys)
+    );
   } else if (config.environment === 'test-lib') {
     mainWindow.loadURL(
-      prepareURL([__dirname, 'libtextsecure', 'test', 'index.html'], moreKeys)
+      prepareFileUrl(
+        [__dirname, 'libtextsecure', 'test', 'index.html'],
+        moreKeys
+      )
     );
   } else {
-    mainWindow.loadURL(prepareURL([__dirname, 'background.html'], moreKeys));
+    mainWindow.loadURL(
+      prepareFileUrl([__dirname, 'background.html'], moreKeys)
+    );
   }
 
   if (!enableCI && config.get('openDevTools')) {
@@ -595,12 +611,6 @@ ipc.on('database-ready', async event => {
 
 ipc.on('show-window', () => {
   showWindow();
-});
-
-ipc.on('set-secure-input', (_sender, enabled) => {
-  if (app.setSecureKeyboardEntryEnabled) {
-    app.setSecureKeyboardEntryEnabled(enabled);
-  }
 });
 
 ipc.on('title-bar-double-click', () => {
@@ -751,6 +761,61 @@ function manageDevices() {
   }
 }
 
+let screenShareWindow;
+function showScreenShareWindow(sourceName) {
+  if (screenShareWindow) {
+    screenShareWindow.show();
+    return;
+  }
+
+  const width = 480;
+
+  const { screen } = electron;
+  const display = screen.getPrimaryDisplay();
+  const options = {
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    backgroundColor: '#2e2e2e',
+    darkTheme: true,
+    frame: false,
+    fullscreenable: false,
+    height: 44,
+    maximizable: false,
+    minimizable: false,
+    resizable: false,
+    show: false,
+    title: locale.messages.screenShareWindow.message,
+    width,
+    webPreferences: {
+      ...defaultWebPrefs,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      contextIsolation: false,
+      preload: path.join(__dirname, 'screenShare_preload.js'),
+    },
+    x: Math.floor(display.size.width / 2) - width / 2,
+    y: 24,
+  };
+
+  screenShareWindow = new BrowserWindow(options);
+
+  handleCommonWindowEvents(screenShareWindow);
+
+  screenShareWindow.loadURL(prepareFileUrl([__dirname, 'screenShare.html']));
+
+  screenShareWindow.on('closed', () => {
+    screenShareWindow = null;
+  });
+
+  screenShareWindow.once('ready-to-show', () => {
+    screenShareWindow.show();
+    screenShareWindow.webContents.send(
+      'render-screen-sharing-controller',
+      sourceName
+    );
+  });
+}
+
 let aboutWindow;
 function showAbout() {
   if (aboutWindow) {
@@ -780,7 +845,7 @@ function showAbout() {
 
   handleCommonWindowEvents(aboutWindow);
 
-  aboutWindow.loadURL(prepareURL([__dirname, 'about.html']));
+  aboutWindow.loadURL(prepareFileUrl([__dirname, 'about.html']));
 
   aboutWindow.on('closed', () => {
     aboutWindow = null;
@@ -837,7 +902,7 @@ function showSettingsWindow() {
 
   handleCommonWindowEvents(settingsWindow);
 
-  settingsWindow.loadURL(prepareURL([__dirname, 'settings.html']));
+  settingsWindow.loadURL(prepareFileUrl([__dirname, 'settings.html']));
 
   settingsWindow.on('closed', () => {
     removeDarkOverlay();
@@ -909,8 +974,10 @@ async function showStickerCreator() {
   handleCommonWindowEvents(stickerCreatorWindow);
 
   const appUrl = config.enableHttp
-    ? prepareURL(['http://localhost:6380/sticker-creator/dist/index.html'])
-    : prepareURL([__dirname, 'sticker-creator/dist/index.html']);
+    ? prepareUrl(
+        new URL('http://localhost:6380/sticker-creator/dist/index.html')
+      )
+    : prepareFileUrl([__dirname, 'sticker-creator/dist/index.html']);
 
   stickerCreatorWindow.loadURL(appUrl);
 
@@ -961,7 +1028,9 @@ async function showDebugLogWindow() {
 
   handleCommonWindowEvents(debugLogWindow);
 
-  debugLogWindow.loadURL(prepareURL([__dirname, 'debug_log.html'], { theme }));
+  debugLogWindow.loadURL(
+    prepareFileUrl([__dirname, 'debug_log.html'], { theme })
+  );
 
   debugLogWindow.on('closed', () => {
     removeDarkOverlay();
@@ -1014,7 +1083,7 @@ function showPermissionsPopupWindow(forCalling, forCamera) {
     handleCommonWindowEvents(permissionsPopupWindow);
 
     permissionsPopupWindow.loadURL(
-      prepareURL([__dirname, 'permissions_popup.html'], {
+      prepareFileUrl([__dirname, 'permissions_popup.html'], {
         theme,
         forCalling,
         forCamera,
@@ -1090,7 +1159,7 @@ function showCaptchaWindow() {
 
   handleCommonWindowEvents(captchaWindow);
 
-  captchaWindow.loadURL(prepareURL([config.get('captchaUrl')]));
+  captchaWindow.loadURL(prepareUrl([config.get('captchaUrl')]));
 
   captchaWindow.on('closed', () => {
     captchaWindow = null;
@@ -1230,7 +1299,7 @@ app.on('ready', async () => {
       loadingWindow = null;
     });
 
-    loadingWindow.loadURL(prepareURL([__dirname, 'loading.html']));
+    loadingWindow.loadURL(prepareFileUrl([__dirname, 'loading.html']));
   });
 
   // Run window preloading in parallel with database initialization.
@@ -1537,6 +1606,22 @@ ipc.on('close-about', () => {
   if (aboutWindow) {
     aboutWindow.close();
   }
+});
+
+ipc.on('close-screen-share-controller', () => {
+  if (screenShareWindow) {
+    screenShareWindow.close();
+  }
+});
+
+ipc.on('stop-screen-share', () => {
+  if (mainWindow) {
+    mainWindow.webContents.send('stop-screen-share');
+  }
+});
+
+ipc.on('show-screen-share', (event, sourceName) => {
+  showScreenShareWindow(sourceName);
 });
 
 ipc.on('update-tray-icon', (event, unreadCount) => {

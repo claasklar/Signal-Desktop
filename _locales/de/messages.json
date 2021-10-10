@@ -5152,7 +5152,7 @@
         "description": "First paragraph in the captcha dialog"
     },
     "CaptchaDialog__second-paragraph": {
-        "message": "Nach erfolgter Verifikation kannst du wieder Nachrichten senden. Alle pausierten Nachrichten werden dann automatisch versendet.",
+        "message": "Nach abgeschlossener Verifikation kannst du wieder Nachrichten senden. Alle pausierten Nachrichten werden dann automatisch versendet.",
         "description": "First paragraph in the captcha dialog"
     },
     "CaptchaDialog--can-close__title": {

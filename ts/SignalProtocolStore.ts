@@ -2,26 +2,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /* eslint-disable class-methods-use-this */
+/* eslint-disable no-restricted-syntax */
 
 import PQueue from 'p-queue';
 import { isNumber } from 'lodash';
 import * as z from 'zod';
 
 import {
-  SessionRecord,
+  Direction,
   PreKeyRecord,
   PrivateKey,
   PublicKey,
+  SenderKeyRecord,
+  SessionRecord,
   SignedPreKeyRecord,
-  Direction,
-} from 'libsignal-client';
+} from '@signalapp/signal-client';
 
 import {
   constantTimeEqual,
   fromEncodedBinaryToArrayBuffer,
   typedArrayToArrayBuffer,
 } from './Crypto';
+import { assert } from './util/assert';
 import { isNotNil } from './util/isNotNil';
+import { Zone } from './util/Zone';
 import { isMoreRecentThan } from './util/timestamp';
 import {
   sessionRecordToProtobuf,
@@ -30,6 +34,7 @@ import {
 import {
   KeyPairType,
   IdentityKeyType,
+  SenderKeyType,
   SessionType,
   SignedPreKeyType,
   OuterSignedPrekeyType,
@@ -90,8 +95,8 @@ async function normalizeEncodedAddress(
   }
 }
 
-type HasIdType = {
-  id: string | number;
+type HasIdType<T> = {
+  id: T;
 };
 type CacheEntryType<DBType, HydratedType> =
   | {
@@ -100,24 +105,37 @@ type CacheEntryType<DBType, HydratedType> =
     }
   | { hydrated: true; fromDB: DBType; item: HydratedType };
 
-async function _fillCaches<T extends HasIdType, HydratedType>(
+type MapFields =
+  | 'identityKeys'
+  | 'preKeys'
+  | 'senderKeys'
+  | 'sessions'
+  | 'signedPreKeys';
+
+type SessionResetsType = Record<string, number>;
+
+export type SessionTransactionOptions = {
+  readonly zone?: Zone;
+};
+
+export const GLOBAL_ZONE = new Zone('GLOBAL_ZONE');
+
+async function _fillCaches<ID, T extends HasIdType<ID>, HydratedType>(
   object: SignalProtocolStore,
-  field: keyof SignalProtocolStore,
+  field: MapFields,
   itemsPromise: Promise<Array<T>>
 ): Promise<void> {
   const items = await itemsPromise;
 
-  const cache: Record<string, CacheEntryType<T, HydratedType>> = Object.create(
-    null
-  );
+  const cache = new Map<ID, CacheEntryType<T, HydratedType>>();
   for (let i = 0, max = items.length; i < max; i += 1) {
     const fromDB = items[i];
     const { id } = fromDB;
 
-    cache[id] = {
+    cache.set(id, {
       fromDB,
       hydrated: false,
-    };
+    });
   }
 
   window.log.info(`SignalProtocolStore: Finished caching ${field} data`);
@@ -182,6 +200,8 @@ const EventsMixin = (function EventsMixin(this: unknown) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any) as typeof window.Backbone.EventsMixin;
 
+type SessionCacheEntry = CacheEntryType<SessionType, SessionRecord>;
+
 export class SignalProtocolStore extends EventsMixin {
   // Enums used across the app
 
@@ -193,18 +213,32 @@ export class SignalProtocolStore extends EventsMixin {
 
   ourRegistrationId?: number;
 
-  identityKeys?: Record<string, CacheEntryType<IdentityKeyType, PublicKey>>;
+  identityKeys?: Map<string, CacheEntryType<IdentityKeyType, PublicKey>>;
 
-  sessions?: Record<string, CacheEntryType<SessionType, SessionRecord>>;
+  senderKeys?: Map<string, CacheEntryType<SenderKeyType, SenderKeyRecord>>;
 
-  preKeys?: Record<string, CacheEntryType<PreKeyType, PreKeyRecord>>;
+  sessions?: Map<string, SessionCacheEntry>;
 
-  signedPreKeys?: Record<
-    string,
+  preKeys?: Map<number, CacheEntryType<PreKeyType, PreKeyRecord>>;
+
+  signedPreKeys?: Map<
+    number,
     CacheEntryType<SignedPreKeyType, SignedPreKeyRecord>
   >;
 
+  senderKeyQueues: Map<string, PQueue> = new Map<string, PQueue>();
+
   sessionQueues: Map<string, PQueue> = new Map<string, PQueue>();
+
+  private currentZone?: Zone;
+
+  private currentZoneDepth = 0;
+
+  private readonly zoneQueue: Array<() => void> = [];
+
+  private pendingSessions = new Map<string, SessionCacheEntry>();
+
+  private pendingUnprocessed = new Map<string, UnprocessedType>();
 
   async hydrateCaches(): Promise<void> {
     await Promise.all([
@@ -216,22 +250,27 @@ export class SignalProtocolStore extends EventsMixin {
         const item = await window.Signal.Data.getItemById('registrationId');
         this.ourRegistrationId = item ? item.value : undefined;
       })(),
-      _fillCaches<IdentityKeyType, PublicKey>(
+      _fillCaches<string, IdentityKeyType, PublicKey>(
         this,
         'identityKeys',
         window.Signal.Data.getAllIdentityKeys()
       ),
-      _fillCaches<SessionType, SessionRecord>(
+      _fillCaches<string, SessionType, SessionRecord>(
         this,
         'sessions',
         window.Signal.Data.getAllSessions()
       ),
-      _fillCaches<PreKeyType, PreKeyRecord>(
+      _fillCaches<number, PreKeyType, PreKeyRecord>(
         this,
         'preKeys',
         window.Signal.Data.getAllPreKeys()
       ),
-      _fillCaches<SignedPreKeyType, SignedPreKeyRecord>(
+      _fillCaches<string, SenderKeyType, SenderKeyRecord>(
+        this,
+        'senderKeys',
+        window.Signal.Data.getAllSenderKeys()
+      ),
+      _fillCaches<number, SignedPreKeyType, SignedPreKeyRecord>(
         this,
         'signedPreKeys',
         window.Signal.Data.getAllSignedPreKeys()
@@ -253,12 +292,12 @@ export class SignalProtocolStore extends EventsMixin {
 
   // PreKeys
 
-  async loadPreKey(keyId: string | number): Promise<PreKeyRecord | undefined> {
+  async loadPreKey(keyId: number): Promise<PreKeyRecord | undefined> {
     if (!this.preKeys) {
       throw new Error('loadPreKey: this.preKeys not yet cached!');
     }
 
-    const entry = this.preKeys[keyId];
+    const entry = this.preKeys.get(keyId);
     if (!entry) {
       window.log.error('Failed to fetch prekey:', keyId);
       return undefined;
@@ -270,11 +309,11 @@ export class SignalProtocolStore extends EventsMixin {
     }
 
     const item = hydratePreKey(entry.fromDB);
-    this.preKeys[keyId] = {
+    this.preKeys.set(keyId, {
       hydrated: true,
       fromDB: entry.fromDB,
       item,
-    };
+    });
     window.log.info('Successfully fetched prekey (cache miss):', keyId);
     return item;
   }
@@ -283,7 +322,7 @@ export class SignalProtocolStore extends EventsMixin {
     if (!this.preKeys) {
       throw new Error('storePreKey: this.preKeys not yet cached!');
     }
-    if (this.preKeys[keyId]) {
+    if (this.preKeys.has(keyId)) {
       throw new Error(`storePreKey: prekey ${keyId} already exists!`);
     }
 
@@ -294,10 +333,10 @@ export class SignalProtocolStore extends EventsMixin {
     };
 
     await window.Signal.Data.createOrUpdatePreKey(fromDB);
-    this.preKeys[keyId] = {
+    this.preKeys.set(keyId, {
       hydrated: false,
       fromDB,
-    };
+    });
   }
 
   async removePreKey(keyId: number): Promise<void> {
@@ -314,12 +353,14 @@ export class SignalProtocolStore extends EventsMixin {
       );
     }
 
-    delete this.preKeys[keyId];
+    this.preKeys.delete(keyId);
     await window.Signal.Data.removePreKeyById(keyId);
   }
 
   async clearPreKeyStore(): Promise<void> {
-    this.preKeys = Object.create(null);
+    if (this.preKeys) {
+      this.preKeys.clear();
+    }
     await window.Signal.Data.removeAllPreKeys();
   }
 
@@ -332,7 +373,7 @@ export class SignalProtocolStore extends EventsMixin {
       throw new Error('loadSignedPreKey: this.signedPreKeys not yet cached!');
     }
 
-    const entry = this.signedPreKeys[keyId];
+    const entry = this.signedPreKeys.get(keyId);
     if (!entry) {
       window.log.error('Failed to fetch signed prekey:', keyId);
       return undefined;
@@ -344,11 +385,11 @@ export class SignalProtocolStore extends EventsMixin {
     }
 
     const item = hydrateSignedPreKey(entry.fromDB);
-    this.signedPreKeys[keyId] = {
+    this.signedPreKeys.set(keyId, {
       hydrated: true,
       item,
       fromDB: entry.fromDB,
-    };
+    });
     window.log.info('Successfully fetched signed prekey (cache miss):', keyId);
     return item;
   }
@@ -362,7 +403,7 @@ export class SignalProtocolStore extends EventsMixin {
       throw new Error('loadSignedPreKeys takes no arguments');
     }
 
-    const entries = Object.values(this.signedPreKeys);
+    const entries = Array.from(this.signedPreKeys.values());
     return entries.map(entry => {
       const preKey = entry.fromDB;
       return {
@@ -395,10 +436,10 @@ export class SignalProtocolStore extends EventsMixin {
     };
 
     await window.Signal.Data.createOrUpdateSignedPreKey(fromDB);
-    this.signedPreKeys[keyId] = {
+    this.signedPreKeys.set(keyId, {
       hydrated: false,
       fromDB,
-    };
+    });
   }
 
   async removeSignedPreKey(keyId: number): Promise<void> {
@@ -406,25 +447,142 @@ export class SignalProtocolStore extends EventsMixin {
       throw new Error('removeSignedPreKey: this.signedPreKeys not yet cached!');
     }
 
-    delete this.signedPreKeys[keyId];
+    this.signedPreKeys.delete(keyId);
     await window.Signal.Data.removeSignedPreKeyById(keyId);
   }
 
   async clearSignedPreKeysStore(): Promise<void> {
-    this.signedPreKeys = Object.create(null);
+    if (this.signedPreKeys) {
+      this.signedPreKeys.clear();
+    }
     await window.Signal.Data.removeAllSignedPreKeys();
+  }
+
+  // Sender Key Queue
+
+  async enqueueSenderKeyJob<T>(
+    encodedAddress: string,
+    task: () => Promise<T>,
+    zone = GLOBAL_ZONE
+  ): Promise<T> {
+    return this.withZone(zone, 'enqueueSenderKeyJob', async () => {
+      const senderId = await normalizeEncodedAddress(encodedAddress);
+      const queue = this._getSenderKeyQueue(senderId);
+
+      return queue.add<T>(task);
+    });
+  }
+
+  private _createSenderKeyQueue(): PQueue {
+    return new PQueue({ concurrency: 1, timeout: 1000 * 60 * 2 });
+  }
+
+  private _getSenderKeyQueue(senderId: string): PQueue {
+    const cachedQueue = this.senderKeyQueues.get(senderId);
+    if (cachedQueue) {
+      return cachedQueue;
+    }
+
+    const freshQueue = this._createSenderKeyQueue();
+    this.senderKeyQueues.set(senderId, freshQueue);
+    return freshQueue;
+  }
+
+  // Sender Keys
+
+  private getSenderKeyId(senderKeyId: string, distributionId: string): string {
+    return `${senderKeyId}--${distributionId}`;
+  }
+
+  async saveSenderKey(
+    encodedAddress: string,
+    distributionId: string,
+    record: SenderKeyRecord
+  ): Promise<void> {
+    if (!this.senderKeys) {
+      throw new Error('saveSenderKey: this.senderKeys not yet cached!');
+    }
+
+    try {
+      const senderId = await normalizeEncodedAddress(encodedAddress);
+      const id = this.getSenderKeyId(senderId, distributionId);
+
+      const fromDB: SenderKeyType = {
+        id,
+        senderId,
+        distributionId,
+        data: record.serialize(),
+        lastUpdatedDate: Date.now(),
+      };
+
+      await window.Signal.Data.createOrUpdateSenderKey(fromDB);
+
+      this.senderKeys.set(id, {
+        hydrated: true,
+        fromDB,
+        item: record,
+      });
+    } catch (error) {
+      const errorString = error && error.stack ? error.stack : error;
+      window.log.error(
+        `saveSenderKey: failed to save senderKey ${encodedAddress}/${distributionId}: ${errorString}`
+      );
+    }
+  }
+
+  async getSenderKey(
+    encodedAddress: string,
+    distributionId: string
+  ): Promise<SenderKeyRecord | undefined> {
+    if (!this.senderKeys) {
+      throw new Error('getSenderKey: this.senderKeys not yet cached!');
+    }
+
+    try {
+      const senderId = await normalizeEncodedAddress(encodedAddress);
+      const id = this.getSenderKeyId(senderId, distributionId);
+
+      const entry = this.senderKeys.get(id);
+      if (!entry) {
+        window.log.error('Failed to fetch sender key:', id);
+        return undefined;
+      }
+
+      if (entry.hydrated) {
+        window.log.info('Successfully fetched signed prekey (cache hit):', id);
+        return entry.item;
+      }
+
+      const item = SenderKeyRecord.deserialize(entry.fromDB.data);
+      this.senderKeys.set(id, {
+        hydrated: true,
+        item,
+        fromDB: entry.fromDB,
+      });
+      window.log.info('Successfully fetched signed prekey (cache miss):', id);
+      return item;
+    } catch (error) {
+      const errorString = error && error.stack ? error.stack : error;
+      window.log.error(
+        `getSenderKey: failed to load senderKey ${encodedAddress}/${distributionId}: ${errorString}`
+      );
+      return undefined;
+    }
   }
 
   // Session Queue
 
   async enqueueSessionJob<T>(
     encodedAddress: string,
-    task: () => Promise<T>
+    task: () => Promise<T>,
+    zone: Zone = GLOBAL_ZONE
   ): Promise<T> {
-    const id = await normalizeEncodedAddress(encodedAddress);
-    const queue = this._getSessionQueue(id);
+    return this.withZone(zone, 'enqueueSessionJob', async () => {
+      const id = await normalizeEncodedAddress(encodedAddress);
+      const queue = this._getSessionQueue(id);
 
-    return queue.add<T>(task);
+      return queue.add<T>(task);
+    });
   }
 
   private _createSessionQueue(): PQueue {
@@ -444,43 +602,198 @@ export class SignalProtocolStore extends EventsMixin {
 
   // Sessions
 
-  async loadSession(
-    encodedAddress: string
-  ): Promise<SessionRecord | undefined> {
-    if (!this.sessions) {
-      throw new Error('loadSession: this.sessions not yet cached!');
+  // Re-entrant session transaction routine. Only one session transaction could
+  // be running at the same time.
+  //
+  // While in transaction:
+  //
+  // - `storeSession()` adds the updated session to the `pendingSessions`
+  // - `loadSession()` looks up the session first in `pendingSessions` and only
+  //   then in the main `sessions` store
+  //
+  // When transaction ends:
+  //
+  // - successfully: pending session stores are batched into the database
+  // - with an error: pending session stores are reverted
+  public async withZone<T>(
+    zone: Zone,
+    name: string,
+    body: () => Promise<T>
+  ): Promise<T> {
+    const debugName = `withZone(${zone.name}:${name})`;
+
+    // Allow re-entering from LibSignalStores
+    if (this.currentZone && this.currentZone !== zone) {
+      const start = Date.now();
+
+      window.log.info(
+        `${debugName}: locked by ${this.currentZone.name}, waiting`
+      );
+
+      return new Promise<T>((resolve, reject) => {
+        this.zoneQueue.push(async () => {
+          const duration = Date.now() - start;
+          window.log.info(`${debugName}: unlocked after ${duration}ms`);
+
+          // Call `.withZone` synchronously from `this.zoneQueue` to avoid
+          // extra in-between ticks while we are on microtasks queue.
+          try {
+            resolve(await this.withZone(zone, name, body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
     }
 
-    if (encodedAddress === null || encodedAddress === undefined) {
-      throw new Error('loadSession: encodedAddress was undefined/null');
-    }
+    this.enterZone(zone, name);
 
+    let result: T;
     try {
-      const id = await normalizeEncodedAddress(encodedAddress);
-      const entry = this.sessions[id];
+      result = await body();
+    } catch (error) {
+      if (this.isInTopLevelZone()) {
+        await this.revertZoneChanges(name, error);
+      }
+      this.leaveZone(zone);
+      throw error;
+    }
 
-      if (!entry) {
+    if (this.isInTopLevelZone()) {
+      await this.commitZoneChanges(name);
+    }
+    this.leaveZone(zone);
+
+    return result;
+  }
+
+  private async commitZoneChanges(name: string): Promise<void> {
+    const { pendingSessions, pendingUnprocessed } = this;
+
+    if (pendingSessions.size === 0 && pendingUnprocessed.size === 0) {
+      return;
+    }
+
+    window.log.info(
+      `commitZoneChanges(${name}): pending sessions ${pendingSessions.size} ` +
+        `pending unprocessed ${pendingUnprocessed.size}`
+    );
+
+    this.pendingSessions = new Map();
+    this.pendingUnprocessed = new Map();
+
+    // Commit both unprocessed and sessions in the same database transaction
+    // to unroll both on error.
+    await window.Signal.Data.commitSessionsAndUnprocessed({
+      sessions: Array.from(pendingSessions.values()).map(
+        ({ fromDB }) => fromDB
+      ),
+      unprocessed: Array.from(pendingUnprocessed.values()),
+    });
+
+    const { sessions } = this;
+    assert(sessions !== undefined, "Can't commit unhydrated storage");
+
+    // Apply changes to in-memory storage after successful DB write.
+    pendingSessions.forEach((value, key) => {
+      sessions.set(key, value);
+    });
+  }
+
+  private async revertZoneChanges(name: string, error: Error): Promise<void> {
+    window.log.info(
+      `revertZoneChanges(${name}): ` +
+        `pending sessions size ${this.pendingSessions.size} ` +
+        `pending unprocessed size ${this.pendingUnprocessed.size}`,
+      error && error.stack
+    );
+    this.pendingSessions.clear();
+    this.pendingUnprocessed.clear();
+  }
+
+  private isInTopLevelZone(): boolean {
+    return this.currentZoneDepth === 1;
+  }
+
+  private enterZone(zone: Zone, name: string): void {
+    this.currentZoneDepth += 1;
+    if (this.currentZoneDepth === 1) {
+      assert(this.currentZone === undefined, 'Should not be in the zone');
+      this.currentZone = zone;
+
+      if (zone !== GLOBAL_ZONE) {
+        window.log.info(`enterZone(${zone.name}:${name})`);
+      }
+    }
+  }
+
+  private leaveZone(zone: Zone): void {
+    assert(this.currentZone === zone, 'Should be in the correct zone');
+
+    this.currentZoneDepth -= 1;
+    assert(this.currentZoneDepth >= 0, 'Unmatched number of leaveZone calls');
+
+    // Since we allow re-entering zones we might actually be in two overlapping
+    // async calls. Leave the zone and yield to another one only if there are
+    // no active zone users anymore.
+    if (this.currentZoneDepth !== 0) {
+      return;
+    }
+
+    if (zone !== GLOBAL_ZONE) {
+      window.log.info(`leaveZone(${zone.name})`);
+    }
+
+    this.currentZone = undefined;
+    const next = this.zoneQueue.shift();
+    if (next) {
+      next();
+    }
+  }
+
+  async loadSession(
+    encodedAddress: string,
+    { zone = GLOBAL_ZONE }: SessionTransactionOptions = {}
+  ): Promise<SessionRecord | undefined> {
+    return this.withZone(zone, 'loadSession', async () => {
+      if (!this.sessions) {
+        throw new Error('loadSession: this.sessions not yet cached!');
+      }
+
+      if (encodedAddress === null || encodedAddress === undefined) {
+        throw new Error('loadSession: encodedAddress was undefined/null');
+      }
+
+      try {
+        const id = await normalizeEncodedAddress(encodedAddress);
+        const map = this.pendingSessions.has(id)
+          ? this.pendingSessions
+          : this.sessions;
+        const entry = map.get(id);
+
+        if (!entry) {
+          return undefined;
+        }
+
+        if (entry.hydrated) {
+          return entry.item;
+        }
+
+        const item = await this._maybeMigrateSession(entry.fromDB);
+        map.set(id, {
+          hydrated: true,
+          item,
+          fromDB: entry.fromDB,
+        });
+        return item;
+      } catch (error) {
+        const errorString = error && error.stack ? error.stack : error;
+        window.log.error(
+          `loadSession: failed to load session ${encodedAddress}: ${errorString}`
+        );
         return undefined;
       }
-
-      if (entry.hydrated) {
-        return entry.item;
-      }
-
-      const item = await this._maybeMigrateSession(entry.fromDB);
-      this.sessions[id] = {
-        hydrated: true,
-        item,
-        fromDB: entry.fromDB,
-      };
-      return item;
-    } catch (error) {
-      const errorString = error && error.stack ? error.stack : error;
-      window.log.error(
-        `loadSession: failed to load session ${encodedAddress}: ${errorString}`
-      );
-      return undefined;
-    }
+    });
   }
 
   private async _maybeMigrateSession(
@@ -525,225 +838,317 @@ export class SignalProtocolStore extends EventsMixin {
 
   async storeSession(
     encodedAddress: string,
-    record: SessionRecord
+    record: SessionRecord,
+    { zone = GLOBAL_ZONE }: SessionTransactionOptions = {}
   ): Promise<void> {
-    if (!this.sessions) {
-      throw new Error('storeSession: this.sessions not yet cached!');
-    }
+    await this.withZone(zone, 'storeSession', async () => {
+      if (!this.sessions) {
+        throw new Error('storeSession: this.sessions not yet cached!');
+      }
 
-    if (encodedAddress === null || encodedAddress === undefined) {
-      throw new Error('storeSession: encodedAddress was undefined/null');
-    }
-    const unencoded = window.textsecure.utils.unencodeNumber(encodedAddress);
-    const deviceId = parseInt(unencoded[1], 10);
+      if (encodedAddress === null || encodedAddress === undefined) {
+        throw new Error('storeSession: encodedAddress was undefined/null');
+      }
+      const unencoded = window.textsecure.utils.unencodeNumber(encodedAddress);
+      const deviceId = parseInt(unencoded[1], 10);
 
-    try {
-      const id = await normalizeEncodedAddress(encodedAddress);
-      const fromDB = {
-        id,
-        version: 2,
-        conversationId: window.textsecure.utils.unencodeNumber(id)[0],
-        deviceId,
-        record: record.serialize().toString('base64'),
-      };
+      try {
+        const id = await normalizeEncodedAddress(encodedAddress);
+        const fromDB = {
+          id,
+          version: 2,
+          conversationId: window.textsecure.utils.unencodeNumber(id)[0],
+          deviceId,
+          record: record.serialize().toString('base64'),
+        };
 
-      await window.Signal.Data.createOrUpdateSession(fromDB);
-      this.sessions[id] = {
-        hydrated: true,
-        fromDB,
-        item: record,
-      };
-    } catch (error) {
-      const errorString = error && error.stack ? error.stack : error;
-      window.log.error(
-        `storeSession: Save failed fo ${encodedAddress}: ${errorString}`
-      );
-      throw error;
-    }
+        const newSession = {
+          hydrated: true,
+          fromDB,
+          item: record,
+        };
+
+        assert(this.currentZone, 'Must run in the zone');
+
+        this.pendingSessions.set(id, newSession);
+
+        // Current zone doesn't support pending sessions - commit immediately
+        if (!zone.supportsPendingSessions()) {
+          await this.commitZoneChanges('storeSession');
+        }
+      } catch (error) {
+        const errorString = error && error.stack ? error.stack : error;
+        window.log.error(
+          `storeSession: Save failed fo ${encodedAddress}: ${errorString}`
+        );
+        throw error;
+      }
+    });
   }
 
   async getDeviceIds(identifier: string): Promise<Array<number>> {
-    if (!this.sessions) {
-      throw new Error('getDeviceIds: this.sessions not yet cached!');
-    }
-    if (identifier === null || identifier === undefined) {
-      throw new Error('getDeviceIds: identifier was undefined/null');
-    }
-
-    try {
-      const id = window.ConversationController.getConversationId(identifier);
-      if (!id) {
-        throw new Error(
-          `getDeviceIds: No conversationId found for identifier ${identifier}`
-        );
+    return this.withZone(GLOBAL_ZONE, 'getDeviceIds', async () => {
+      if (!this.sessions) {
+        throw new Error('getDeviceIds: this.sessions not yet cached!');
+      }
+      if (identifier === null || identifier === undefined) {
+        throw new Error('getDeviceIds: identifier was undefined/null');
       }
 
-      const allSessions = Object.values(this.sessions);
-      const entries = allSessions.filter(
-        session => session.fromDB.conversationId === id
-      );
-      const openIds = await Promise.all(
-        entries.map(async entry => {
-          if (entry.hydrated) {
-            const record = entry.item;
+      try {
+        const id = window.ConversationController.getConversationId(identifier);
+        if (!id) {
+          throw new Error(
+            `getDeviceIds: No conversationId found for identifier ${identifier}`
+          );
+        }
+
+        const allSessions = this._getAllSessions();
+        const entries = allSessions.filter(
+          session => session.fromDB.conversationId === id
+        );
+        const openIds = await Promise.all(
+          entries.map(async entry => {
+            if (entry.hydrated) {
+              const record = entry.item;
+              if (record.hasCurrentState()) {
+                return entry.fromDB.deviceId;
+              }
+
+              return undefined;
+            }
+
+            const record = await this._maybeMigrateSession(entry.fromDB);
             if (record.hasCurrentState()) {
               return entry.fromDB.deviceId;
             }
 
             return undefined;
-          }
+          })
+        );
 
-          const record = await this._maybeMigrateSession(entry.fromDB);
-          if (record.hasCurrentState()) {
-            return entry.fromDB.deviceId;
-          }
+        return openIds.filter(isNotNil);
+      } catch (error) {
+        window.log.error(
+          `getDeviceIds: Failed to get device ids for identifier ${identifier}`,
+          error && error.stack ? error.stack : error
+        );
+      }
 
-          return undefined;
-        })
-      );
-
-      return openIds.filter(isNotNil);
-    } catch (error) {
-      window.log.error(
-        `getDeviceIds: Failed to get device ids for identifier ${identifier}`,
-        error && error.stack ? error.stack : error
-      );
-    }
-
-    return [];
+      return [];
+    });
   }
 
   async removeSession(encodedAddress: string): Promise<void> {
-    if (!this.sessions) {
-      throw new Error('removeSession: this.sessions not yet cached!');
-    }
+    return this.withZone(GLOBAL_ZONE, 'removeSession', async () => {
+      if (!this.sessions) {
+        throw new Error('removeSession: this.sessions not yet cached!');
+      }
 
-    window.log.info('removeSession: deleting session for', encodedAddress);
-    try {
-      const id = await normalizeEncodedAddress(encodedAddress);
-      await window.Signal.Data.removeSessionById(id);
-      delete this.sessions[id];
-    } catch (e) {
-      window.log.error(
-        `removeSession: Failed to delete session for ${encodedAddress}`
-      );
-    }
+      window.log.info('removeSession: deleting session for', encodedAddress);
+      try {
+        const id = await normalizeEncodedAddress(encodedAddress);
+        await window.Signal.Data.removeSessionById(id);
+        this.sessions.delete(id);
+        this.pendingSessions.delete(id);
+      } catch (e) {
+        window.log.error(
+          `removeSession: Failed to delete session for ${encodedAddress}`
+        );
+      }
+    });
   }
 
   async removeAllSessions(identifier: string): Promise<void> {
-    if (!this.sessions) {
-      throw new Error('removeAllSessions: this.sessions not yet cached!');
-    }
-
-    if (identifier === null || identifier === undefined) {
-      throw new Error('removeAllSessions: identifier was undefined/null');
-    }
-
-    window.log.info('removeAllSessions: deleting sessions for', identifier);
-
-    const id = window.ConversationController.getConversationId(identifier);
-
-    const entries = Object.values(this.sessions);
-
-    for (let i = 0, max = entries.length; i < max; i += 1) {
-      const entry = entries[i];
-      if (entry.fromDB.conversationId === id) {
-        delete this.sessions[entry.fromDB.id];
+    return this.withZone(GLOBAL_ZONE, 'removeAllSessions', async () => {
+      if (!this.sessions) {
+        throw new Error('removeAllSessions: this.sessions not yet cached!');
       }
-    }
 
-    await window.Signal.Data.removeSessionsByConversation(identifier);
+      if (identifier === null || identifier === undefined) {
+        throw new Error('removeAllSessions: identifier was undefined/null');
+      }
+
+      window.log.info('removeAllSessions: deleting sessions for', identifier);
+
+      const id = window.ConversationController.getConversationId(identifier);
+
+      const entries = Array.from(this.sessions.values());
+
+      for (let i = 0, max = entries.length; i < max; i += 1) {
+        const entry = entries[i];
+        if (entry.fromDB.conversationId === id) {
+          this.sessions.delete(entry.fromDB.id);
+          this.pendingSessions.delete(entry.fromDB.id);
+        }
+      }
+
+      await window.Signal.Data.removeSessionsByConversation(identifier);
+    });
   }
 
-  private async _archiveSession(
-    entry?: CacheEntryType<SessionType, SessionRecord>
-  ) {
+  private async _archiveSession(entry?: SessionCacheEntry, zone?: Zone) {
     if (!entry) {
       return;
     }
 
-    await this.enqueueSessionJob(entry.fromDB.id, async () => {
-      const item = entry.hydrated
-        ? entry.item
-        : await this._maybeMigrateSession(entry.fromDB);
+    await this.enqueueSessionJob(
+      entry.fromDB.id,
+      async () => {
+        const item = entry.hydrated
+          ? entry.item
+          : await this._maybeMigrateSession(entry.fromDB);
 
-      if (!item.hasCurrentState()) {
-        return;
-      }
+        if (!item.hasCurrentState()) {
+          return;
+        }
 
-      item.archiveCurrentState();
+        item.archiveCurrentState();
 
-      await this.storeSession(entry.fromDB.id, item);
-    });
+        await this.storeSession(entry.fromDB.id, item);
+      },
+      zone
+    );
   }
 
   async archiveSession(encodedAddress: string): Promise<void> {
-    if (!this.sessions) {
-      throw new Error('archiveSession: this.sessions not yet cached!');
-    }
+    return this.withZone(GLOBAL_ZONE, 'archiveSession', async () => {
+      if (!this.sessions) {
+        throw new Error('archiveSession: this.sessions not yet cached!');
+      }
 
-    window.log.info(`archiveSession: session for ${encodedAddress}`);
+      window.log.info(`archiveSession: session for ${encodedAddress}`);
 
-    const id = await normalizeEncodedAddress(encodedAddress);
-    const entry = this.sessions[id];
+      const id = await normalizeEncodedAddress(encodedAddress);
 
-    await this._archiveSession(entry);
+      const entry = this.pendingSessions.get(id) || this.sessions.get(id);
+
+      await this._archiveSession(entry);
+    });
   }
 
-  async archiveSiblingSessions(encodedAddress: string): Promise<void> {
-    if (!this.sessions) {
-      throw new Error('archiveSiblingSessions: this.sessions not yet cached!');
-    }
+  async archiveSiblingSessions(
+    encodedAddress: string,
+    { zone = GLOBAL_ZONE }: SessionTransactionOptions = {}
+  ): Promise<void> {
+    return this.withZone(zone, 'archiveSiblingSessions', async () => {
+      if (!this.sessions) {
+        throw new Error(
+          'archiveSiblingSessions: this.sessions not yet cached!'
+        );
+      }
 
-    window.log.info(
-      'archiveSiblingSessions: archiving sibling sessions for',
-      encodedAddress
-    );
+      window.log.info(
+        'archiveSiblingSessions: archiving sibling sessions for',
+        encodedAddress
+      );
 
-    const id = await normalizeEncodedAddress(encodedAddress);
-    const [identifier, deviceId] = window.textsecure.utils.unencodeNumber(id);
-    const deviceIdNumber = parseInt(deviceId, 10);
+      const id = await normalizeEncodedAddress(encodedAddress);
+      const [identifier, deviceId] = window.textsecure.utils.unencodeNumber(id);
+      const deviceIdNumber = parseInt(deviceId, 10);
 
-    const allEntries = Object.values(this.sessions);
-    const entries = allEntries.filter(
-      entry =>
-        entry.fromDB.conversationId === identifier &&
-        entry.fromDB.deviceId !== deviceIdNumber
-    );
+      const allEntries = this._getAllSessions();
+      const entries = allEntries.filter(
+        entry =>
+          entry.fromDB.conversationId === identifier &&
+          entry.fromDB.deviceId !== deviceIdNumber
+      );
 
-    await Promise.all(
-      entries.map(async entry => {
-        await this._archiveSession(entry);
-      })
-    );
+      await Promise.all(
+        entries.map(async entry => {
+          await this._archiveSession(entry, zone);
+        })
+      );
+    });
   }
 
   async archiveAllSessions(identifier: string): Promise<void> {
-    if (!this.sessions) {
-      throw new Error('archiveAllSessions: this.sessions not yet cached!');
-    }
+    return this.withZone(GLOBAL_ZONE, 'archiveAllSessions', async () => {
+      if (!this.sessions) {
+        throw new Error('archiveAllSessions: this.sessions not yet cached!');
+      }
 
-    window.log.info(
-      'archiveAllSessions: archiving all sessions for',
-      identifier
-    );
+      window.log.info(
+        'archiveAllSessions: archiving all sessions for',
+        identifier
+      );
 
-    const id = window.ConversationController.getConversationId(identifier);
-    const allEntries = Object.values(this.sessions);
-    const entries = allEntries.filter(
-      entry => entry.fromDB.conversationId === id
-    );
+      const id = window.ConversationController.getConversationId(identifier);
 
-    await Promise.all(
-      entries.map(async entry => {
-        await this._archiveSession(entry);
-      })
-    );
+      const allEntries = this._getAllSessions();
+      const entries = allEntries.filter(
+        entry => entry.fromDB.conversationId === id
+      );
+
+      await Promise.all(
+        entries.map(async entry => {
+          await this._archiveSession(entry);
+        })
+      );
+    });
   }
 
   async clearSessionStore(): Promise<void> {
-    this.sessions = Object.create(null);
-    window.Signal.Data.removeAllSessions();
+    return this.withZone(GLOBAL_ZONE, 'clearSessionStore', async () => {
+      if (this.sessions) {
+        this.sessions.clear();
+      }
+      this.pendingSessions.clear();
+      await window.Signal.Data.removeAllSessions();
+    });
+  }
+
+  async lightSessionReset(uuid: string, deviceId: number): Promise<void> {
+    const id = `${uuid}.${deviceId}`;
+
+    const sessionResets = window.storage.get(
+      'sessionResets',
+      {}
+    ) as SessionResetsType;
+
+    const lastReset = sessionResets[id];
+
+    const ONE_HOUR = 60 * 60 * 1000;
+    if (lastReset && isMoreRecentThan(lastReset, ONE_HOUR)) {
+      window.log.warn(
+        `lightSessionReset/${id}: Skipping session reset, last reset at ${lastReset}`
+      );
+      return;
+    }
+
+    sessionResets[id] = Date.now();
+    window.storage.put('sessionResets', sessionResets);
+
+    try {
+      // First, fetch this conversation
+      const conversationId = window.ConversationController.ensureContactIds({
+        uuid,
+      });
+      assert(conversationId, `lightSessionReset/${id}: missing conversationId`);
+
+      const conversation = window.ConversationController.get(conversationId);
+      assert(conversation, `lightSessionReset/${id}: missing conversation`);
+
+      window.log.warn(`lightSessionReset/${id}: Resetting session`);
+
+      // Archive open session with this device
+      await this.archiveSession(id);
+
+      // Send a null message with newly-created session
+      const sendOptions = await conversation.getSendOptions();
+      await window.textsecure.messaging.sendNullMessage({ uuid }, sendOptions);
+    } catch (error) {
+      // If we failed to do the session reset, then we'll allow another attempt sooner
+      //   than one hour from now.
+      delete sessionResets[id];
+      window.storage.put('sessionResets', sessionResets);
+
+      const errorString = error && error.stack ? error.stack : error;
+      window.log.error(
+        `lightSessionReset/${id}: Encountered error`,
+        errorString
+      );
+    }
   }
 
   // Identity Keys
@@ -761,7 +1166,7 @@ export class SignalProtocolStore extends EventsMixin {
         );
       }
 
-      const entry = this.identityKeys[id];
+      const entry = this.identityKeys.get(id);
       if (!entry) {
         return undefined;
       }
@@ -873,16 +1278,17 @@ export class SignalProtocolStore extends EventsMixin {
     const { id } = data;
 
     await window.Signal.Data.createOrUpdateIdentityKey(data);
-    this.identityKeys[id] = {
+    this.identityKeys.set(id, {
       hydrated: false,
       fromDB: data,
-    };
+    });
   }
 
   async saveIdentity(
     encodedAddress: string,
     publicKey: ArrayBuffer,
-    nonblockingApproval = false
+    nonblockingApproval = false,
+    { zone }: SessionTransactionOptions = {}
   ): Promise<boolean> {
     if (!this.identityKeys) {
       throw new Error('saveIdentity: this.identityKeys not yet cached!');
@@ -955,7 +1361,10 @@ export class SignalProtocolStore extends EventsMixin {
           error && error.stack ? error.stack : error
         );
       }
-      await this.archiveSiblingSessions(encodedAddress);
+
+      // Pass the zone to facilitate transactional session use in
+      // MessageReceiver.ts
+      await this.archiveSiblingSessions(encodedAddress, { zone });
 
       return true;
     }
@@ -1275,7 +1684,7 @@ export class SignalProtocolStore extends EventsMixin {
 
     const id = window.ConversationController.getConversationId(identifier);
     if (id) {
-      delete this.identityKeys[id];
+      this.identityKeys.delete(id);
       await window.Signal.Data.removeIdentityKeyById(id);
       await this.removeAllSessions(id);
     }
@@ -1283,56 +1692,89 @@ export class SignalProtocolStore extends EventsMixin {
 
   // Not yet processed messages - for resiliency
   getUnprocessedCount(): Promise<number> {
-    return window.Signal.Data.getUnprocessedCount();
-  }
-
-  getAllUnprocessed(): Promise<Array<UnprocessedType>> {
-    return window.Signal.Data.getAllUnprocessed();
-  }
-
-  getUnprocessedById(id: string): Promise<UnprocessedType | undefined> {
-    return window.Signal.Data.getUnprocessedById(id);
-  }
-
-  addUnprocessed(data: UnprocessedType): Promise<string> {
-    // We need to pass forceSave because the data has an id already, which will cause
-    //   an update instead of an insert.
-    return window.Signal.Data.saveUnprocessed(data, {
-      forceSave: true,
+    return this.withZone(GLOBAL_ZONE, 'getUnprocessedCount', async () => {
+      return window.Signal.Data.getUnprocessedCount();
     });
   }
 
-  addMultipleUnprocessed(array: Array<UnprocessedType>): Promise<void> {
-    // We need to pass forceSave because the data has an id already, which will cause
-    //   an update instead of an insert.
-    return window.Signal.Data.saveUnprocesseds(array, {
-      forceSave: true,
+  getAllUnprocessed(): Promise<Array<UnprocessedType>> {
+    return this.withZone(GLOBAL_ZONE, 'getAllUnprocessed', async () => {
+      return window.Signal.Data.getAllUnprocessed();
+    });
+  }
+
+  getUnprocessedById(id: string): Promise<UnprocessedType | undefined> {
+    return this.withZone(GLOBAL_ZONE, 'getUnprocessedById', async () => {
+      return window.Signal.Data.getUnprocessedById(id);
+    });
+  }
+
+  addUnprocessed(
+    data: UnprocessedType,
+    { zone = GLOBAL_ZONE }: SessionTransactionOptions = {}
+  ): Promise<void> {
+    return this.withZone(zone, 'addUnprocessed', async () => {
+      this.pendingUnprocessed.set(data.id, data);
+
+      // Current zone doesn't support pending unprocessed - commit immediately
+      if (!zone.supportsPendingUnprocessed()) {
+        await this.commitZoneChanges('addUnprocessed');
+      }
+    });
+  }
+
+  addMultipleUnprocessed(
+    array: Array<UnprocessedType>,
+    { zone = GLOBAL_ZONE }: SessionTransactionOptions = {}
+  ): Promise<void> {
+    return this.withZone(zone, 'addMultipleUnprocessed', async () => {
+      for (const elem of array) {
+        this.pendingUnprocessed.set(elem.id, elem);
+      }
+      // Current zone doesn't support pending unprocessed - commit immediately
+      if (!zone.supportsPendingUnprocessed()) {
+        await this.commitZoneChanges('addMultipleUnprocessed');
+      }
     });
   }
 
   updateUnprocessedAttempts(id: string, attempts: number): Promise<void> {
-    return window.Signal.Data.updateUnprocessedAttempts(id, attempts);
+    return this.withZone(GLOBAL_ZONE, 'updateUnprocessedAttempts', async () => {
+      await window.Signal.Data.updateUnprocessedAttempts(id, attempts);
+    });
   }
 
   updateUnprocessedWithData(
     id: string,
     data: UnprocessedUpdateType
   ): Promise<void> {
-    return window.Signal.Data.updateUnprocessedWithData(id, data);
+    return this.withZone(GLOBAL_ZONE, 'updateUnprocessedWithData', async () => {
+      await window.Signal.Data.updateUnprocessedWithData(id, data);
+    });
   }
 
   updateUnprocessedsWithData(
     items: Array<{ id: string; data: UnprocessedUpdateType }>
   ): Promise<void> {
-    return window.Signal.Data.updateUnprocessedsWithData(items);
+    return this.withZone(
+      GLOBAL_ZONE,
+      'updateUnprocessedsWithData',
+      async () => {
+        await window.Signal.Data.updateUnprocessedsWithData(items);
+      }
+    );
   }
 
   removeUnprocessed(idOrArray: string | Array<string>): Promise<void> {
-    return window.Signal.Data.removeUnprocessed(idOrArray);
+    return this.withZone(GLOBAL_ZONE, 'removeUnprocessed', async () => {
+      await window.Signal.Data.removeUnprocessed(idOrArray);
+    });
   }
 
   removeAllUnprocessed(): Promise<void> {
-    return window.Signal.Data.removeAllUnprocessed();
+    return this.withZone(GLOBAL_ZONE, 'removeAllUnprocessed', async () => {
+      await window.Signal.Data.removeAllUnprocessed();
+    });
   }
 
   async removeAllData(): Promise<void> {
@@ -1352,6 +1794,19 @@ export class SignalProtocolStore extends EventsMixin {
 
     window.storage.reset();
     await window.storage.fetch();
+  }
+
+  private _getAllSessions(): Array<SessionCacheEntry> {
+    const union = new Map<string, SessionCacheEntry>();
+
+    this.sessions?.forEach((value, key) => {
+      union.set(key, value);
+    });
+    this.pendingSessions.forEach((value, key) => {
+      union.set(key, value);
+    });
+
+    return Array.from(union.values());
   }
 }
 

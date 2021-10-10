@@ -701,6 +701,10 @@
         "message": "À propos de Signal Desktop pour ordinateur",
         "description": "Item under the Help menu, which opens a small about window"
     },
+    "screenShareWindow": {
+        "message": "Sharing screen",
+        "description": "Title for screen sharing window"
+    },
     "speech": {
         "message": "Parole",
         "description": "Item under the Edit menu, with 'start/stop speaking' items below it"
@@ -748,6 +752,10 @@
                 "example": "dog"
             }
         }
+    },
+    "noSearchResults--sms-only": {
+        "message": "SMS/MMS contacts are not available on Desktop.",
+        "description": "Shown in the search left pane when no results were found and primary device has SMS/MMS handling enabled"
     },
     "noSearchResultsInConversation": {
         "message": "Aucun résultat pour « $searchTerm$ » dans $conversationName$",
@@ -1006,7 +1014,7 @@
         "description": "Label for when something is turned off"
     },
     "deleteWarning": {
-        "message": "This message will be deleted from this device.",
+        "message": "Ce message sera supprimé de cet appareil.",
         "description": "Text shown in the confirmation dialog for deleting a message locally"
     },
     "deleteForEveryoneWarning": {
@@ -1275,6 +1283,18 @@
         "message": "Réactiver le microphone",
         "description": "Button tooltip label for turning on the microphone"
     },
+    "calling__button--presenting-disabled": {
+        "message": "Presenting disabled",
+        "description": "Button tooltip label for when screen sharing is disabled"
+    },
+    "calling__button--presenting-on": {
+        "message": "Start presenting",
+        "description": "Button tooltip label for starting to share screen"
+    },
+    "calling__button--presenting-off": {
+        "message": "Stop presenting",
+        "description": "Button tooltip label for stopping screen sharing"
+    },
     "calling__your-video-is-off": {
         "message": "Votre caméra est désactivée",
         "description": "Label in the calling lobby indicating that your camera is off"
@@ -1387,6 +1407,84 @@
         "message": "Faire défiler vers le bas",
         "description": "Label for the \"scroll down\" button in a call's overflow area"
     },
+    "calling__presenting--notification-title": {
+        "message": "You're presenting to everyone.",
+        "description": "Title for the share screen notification"
+    },
+    "calling__presenting--notification-body": {
+        "message": "Click here to return to the call when you're ready to stop presenting.",
+        "description": "Body text for the share screen notification"
+    },
+    "calling__presenting--info": {
+        "message": "Signal is sharing $window$.",
+        "description": "Text that appears in the screen sharing controller to inform person that they are presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Application"
+            }
+        }
+    },
+    "calling__presenting--stop": {
+        "message": "Arrêter le partage",
+        "description": "Button for stopping screen sharing"
+    },
+    "calling__presenting--you-stopped": {
+        "message": "You stopped presenting",
+        "description": "Toast that appears when someone stops presenting"
+    },
+    "calling__presenting--person-ongoing": {
+        "message": "$name$ is presenting",
+        "description": "Title of call when someone is presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--person-stopped": {
+        "message": "$name$ stopped presenting",
+        "description": "Toast that appears when someone stops presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--permission-title": {
+        "message": "Permission needed",
+        "description": "Shown as the title for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--macos-permission-description": {
+        "message": "On an Apple Mac computer using macOS Catalina version 10.15 or later, Signal needs permission to access your computer's screen recording.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step1": {
+        "message": "Allez dans Préférences Système puis cliquez sur Sécurité et Confidentialité.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step2": {
+        "message": "Cliquez sur Confidentialité.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step3": {
+        "message": "Sur la gauche, cliquez sur Enregistrement de l’écran.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step4": {
+        "message": "Sur la droite, cochez la case Signal.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-open": {
+        "message": "Ouvrez les Préférences Système",
+        "description": "The button that opens your system preferences for the needs screen record permissions modal"
+    },
+    "calling__presenting--permission-cancel": {
+        "message": "Fermer",
+        "description": "The cancel button for the needs screen record permissions modal"
+    },
     "alwaysRelayCallsDescription": {
         "message": "Toujours relayer les appels",
         "description": "Description of the always relay calls setting"
@@ -1412,7 +1510,7 @@
         "description": "Header for general options on the settings screen"
     },
     "spellCheckDescription": {
-        "message": "Enable spell check",
+        "message": "Activer la vérification orthographique",
         "description": "Description of the spell check setting"
     },
     "spellCheckWillBeEnabled": {
@@ -1858,15 +1956,15 @@
         "description": "Label for header when starting a new conversation"
     },
     "contactSearchPlaceholder": {
-        "message": "Search by name or phone number",
+        "message": "Chercher par nom ou numéro de téléphone",
         "description": "Placeholder to use when searching for contacts in the composer"
     },
     "noContactsFound": {
-        "message": "No contacts found",
+        "message": "Aucun contact trouvé",
         "description": "Label shown when there are no contacts to compose to"
     },
     "noConversationsFound": {
-        "message": "No conversations found",
+        "message": "Aucune conversation trouvée",
         "description": "Label shown when there are no conversations to compose to"
     },
     "chooseGroupMembers__title": {
@@ -1890,7 +1988,7 @@
         "description": "Shown in the alert when you add the maximum number of group members"
     },
     "chooseGroupMembers__maximum-group-size__body": {
-        "message": "Signal groups can have a maximum of $max$ members.",
+        "message": "Les groupes Signal peuvent avoir un maximum de $max$ membres.",
         "description": "Shown in the alert when you add the maximum number of group members",
         "placeholders": {
             "max": {
@@ -1904,7 +2002,7 @@
         "description": "Shown in the alert when you add the maximum recommended number of group members"
     },
     "chooseGroupMembers__maximum-recommended-group-size__body": {
-        "message": "Signal groups perform best with $max$ members or less. Adding more members will cause delays sending and receiving messages.",
+        "message": "Les groupes Signal fonctionnent mieux avec $max$ membres ou moins. Ajouter davantage de membre entraînera des retards dans l’envoi et la réception de messages.",
         "description": "Shown in the alert when you add the maximum recommended number of group members",
         "placeholders": {
             "max": {
@@ -1932,7 +2030,7 @@
         "description": "The title for the 'set group metadata' left pane screen"
     },
     "setGroupMetadata__back-button": {
-        "message": "Back to member selection",
+        "message": "Retour à la sélection des membres",
         "description": "Used as alt-text of the back button on the 'set group metadata' left pane screen"
     },
     "setGroupMetadata__group-name-placeholder": {
@@ -1948,7 +2046,7 @@
         "description": "The header for the members list in the 'set group metadata' left pane screen"
     },
     "setGroupMetadata__error-message": {
-        "message": "This group couldn’t be created. Check your connection and try again.",
+        "message": "Impossible de créer ce groupe. Vérifiez votre connexion et réessayez.",
         "description": "Shown in the modal when we can't create a group"
     },
     "updateGroupAttributes__title": {
@@ -1956,7 +2054,7 @@
         "description": "Shown in the modal when we want to update a group"
     },
     "updateGroupAttributes__error-message": {
-        "message": "Failed to update the group. Check your connection and try again.",
+        "message": "Échec de la mise à jour du groupe. Vérifiez votre connexion et réessayez.",
         "description": "Shown in the modal when we can't update a group"
     },
     "notSupportedSMS": {
@@ -2404,7 +2502,7 @@
         "description": "Shown in the shortcuts guide"
     },
     "Keyboard--new-conversation": {
-        "message": "Start new conversation",
+        "message": "Lancer une nouvelle conversation",
         "description": "Shown in the shortcuts guide"
     },
     "Keyboard--archive-conversation": {
@@ -3102,7 +3200,7 @@
         "description": "Shown to indicate this user is not a member of any groups"
     },
     "no-groups-in-common-warning": {
-        "message": "No groups in common. Review requests carefully.",
+        "message": "Aucun groupe en commun. Examinez les demandes avec attention.",
         "description": "When a user has no common groups, show this warning"
     },
     "acceptCall": {
@@ -3279,6 +3377,22 @@
         "message": "Quitter l’appel",
         "description": "Title for hang up button"
     },
+    "calling__SelectPresentingSourcesModal--title": {
+        "message": "Share your screen",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--confirm": {
+        "message": "Partager l’écran",
+        "description": "Confirm button for sharing screen modal"
+    },
+    "calling__SelectPresentingSourcesModal--entireScreen": {
+        "message": "Tout l’écran",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--window": {
+        "message": "Une fenêtre",
+        "description": "Title for the select your screen sharing sources modal"
+    },
     "callingDeviceSelection__label--video": {
         "message": "Vidéo",
         "description": "Label for video input selector"
@@ -3308,7 +3422,7 @@
         "description": "Label for muting the conversation"
     },
     "muteEightHours": {
-        "message": "Mute for eight hours",
+        "message": "Sourdine pendant huit heures",
         "description": "Label for muting the conversation"
     },
     "muteDay": {
@@ -4631,6 +4745,18 @@
         "message": "Joindre un fichier",
         "description": "Aria label for file attachment button in composition area"
     },
+    "CompositionArea--sms-only__title": {
+        "message": "This person isn’t using Signal",
+        "description": "Title for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__body": {
+        "message": "Signal Desktop does not support messaging non-Signal contacts. Ask this person to install Signal for a more secure messaging experience.",
+        "description": "Body for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__spinner-label": {
+        "message": "Checking contact's registration status",
+        "description": "Displayed while checking if the contact is SMS-only"
+    },
     "countMutedConversationsDescription": {
         "message": "Compter les conversations en sourdine dans la pastille de comptage",
         "description": "Description for counting muted conversations in badge setting"
@@ -4964,11 +5090,11 @@
         "description": "The text on the button when there's an error in the composer"
     },
     "NewlyCreatedGroupInvitedContactsDialog--title--one": {
-        "message": "Invitation sent",
+        "message": "Invitation envoyée",
         "description": "When creating a new group and inviting users, this is shown in the dialog"
     },
     "NewlyCreatedGroupInvitedContactsDialog--title--many": {
-        "message": "$count$ invitations sent",
+        "message": "$count$ invitations envoyées",
         "description": "When creating a new group and inviting users, this is shown in the dialog",
         "placeholders": {
             "count": {
@@ -5008,7 +5134,7 @@
         "description": "When adding new members to an existing group, this is shown in the dialog"
     },
     "AddGroupMembersModal--confirm-title--one": {
-        "message": "Add $person$ to \"$group$\"?",
+        "message": "Ajouter $person$ à « $group$ » ?",
         "description": "When adding new members to an existing group, this is shown in the confirmation dialog",
         "placeholders": {
             "person": {
@@ -5022,7 +5148,7 @@
         }
     },
     "AddGroupMembersModal--confirm-title--many": {
-        "message": "Add $count$ members to \"$group$\"?",
+        "message": "Ajouter $count$ membres à « $group$ » ?",
         "description": "When adding new members to an existing group, this is shown in the confirmation dialog",
         "placeholders": {
             "count": {
@@ -5060,11 +5186,11 @@
         "description": "The label for contact checkboxes that are disabled"
     },
     "alreadyAMember": {
-        "message": "Already a member",
+        "message": "Déjà membre",
         "description": "The label for contact checkboxes that are disabled because they're already a member"
     },
     "MessageAudio--play": {
-        "message": "Play audio attachment",
+        "message": "Jouer le fichier son joint",
         "description": "Aria label for audio attachment's Play button"
     },
     "MessageAudio--pause": {
@@ -5072,11 +5198,11 @@
         "description": "Aria label for audio attachment's Pause button"
     },
     "MessageAudio--download": {
-        "message": "Download audio attachment",
+        "message": "Télécharger le fichier son joint",
         "description": "Aria label for audio attachment's Download button"
     },
     "MessageAudio--pending": {
-        "message": "Downloading audio attachment...",
+        "message": "Téléchargement du fichier son joint…",
         "description": "Aria label for pending audio attachment spinner"
     },
     "MessageAudio--slider": {

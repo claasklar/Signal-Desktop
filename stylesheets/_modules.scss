@@ -5989,6 +5989,19 @@ button.module-image__border-overlay:focus {
       $color-white
     );
   }
+
+  &--presenting {
+    $icon: '../images/icons/v2/share-screen-solid-28.svg';
+    &--on {
+      @include calling-button-icon-on($icon);
+    }
+    &--off {
+      @include calling-button-icon-off($icon);
+    }
+    &--disabled {
+      @include calling-button-icon-disabled($icon);
+    }
+  }
 }
 
 @keyframes module-ongoing-call__controls--fade-in {
@@ -6286,6 +6299,10 @@ button.module-image__border-overlay:focus {
         height: 100%;
         transform: rotateY(180deg);
         width: 100%;
+
+        &--presenting {
+          transform: inherit;
+        }
       }
 
       &--audio-muted::before {
@@ -6323,6 +6340,7 @@ button.module-image__border-overlay:focus {
   }
 
   &__toast {
+    @include button-reset();
     @include font-body-1-bold;
     background-color: $color-gray-75;
     border-radius: 8px;
@@ -6648,6 +6666,17 @@ button.module-image__border-overlay:focus {
       height: 16px;
       width: 16px;
     }
+  }
+
+  &__presenting {
+    @include color-svg(
+      '../images/icons/v2/share-screen-solid-28.svg',
+      $color-white
+    );
+    display: inline-block;
+    margin-left: 18px;
+    height: 16px;
+    width: 16px;
   }
 }
 
@@ -7329,6 +7358,16 @@ button.module-image__border-overlay:focus {
   width: 100%;
   text-align: center;
   outline: none;
+}
+
+.module-left-pane__no-search-results__sms-only {
+  margin-top: 12px;
+  @include light-theme {
+    color: $color-gray-60;
+  }
+  @include dark-theme {
+    color: $color-gray-25;
+  }
 }
 
 .module-left-pane__compose-search-form {
@@ -9247,6 +9286,50 @@ button.module-image__border-overlay:focus {
   flex-grow: 1;
   margin: {
     bottom: 6px;
+  }
+}
+
+.module-composition-area--sms-only {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  // Note the margine in .composition-area-placeholder above
+  padding: 14px 16px 18px 16px;
+
+  &:not(.module-composition-area--pending) {
+    @include light-theme {
+      border-top: 1px solid $color-gray-05;
+    }
+    @include dark-theme {
+      border-top: 1px solid $color-gray-75;
+    }
+  }
+
+  &__title {
+    @include font-body-2-bold;
+    margin: 0 0 2px 0;
+
+    @include light-theme {
+      color: $color-gray-60;
+    }
+    @include dark-theme {
+      color: $color-gray-05;
+    }
+  }
+
+  &__body {
+    @include font-body-2;
+    text-align: center;
+
+    margin: 0;
+
+    @include light-theme {
+      color: $color-gray-60;
+    }
+    @include dark-theme {
+      color: $color-gray-05;
+    }
   }
 }
 

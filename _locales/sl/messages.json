@@ -3102,7 +3102,7 @@
         "description": "Shown to indicate this user is not a member of any groups"
     },
     "no-groups-in-common-warning": {
-        "message": "No groups in common. Review requests carefully.",
+        "message": "Nimate skupnih skupin. Dobro preverite prošnjo.",
         "description": "When a user has no common groups, show this warning"
     },
     "acceptCall": {

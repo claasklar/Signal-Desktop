@@ -48,6 +48,7 @@ import {
   MessageTypeUnhydrated,
   PreKeyType,
   SearchResultMessageType,
+  SenderKeyType,
   ServerInterface,
   SessionType,
   SignedPreKeyType,
@@ -134,8 +135,14 @@ const dataInterface: ClientInterface = {
   removeItemById,
   removeAllItems,
 
+  createOrUpdateSenderKey,
+  getSenderKeyById,
+  removeAllSenderKeys,
+  getAllSenderKeys,
+
   createOrUpdateSession,
   createOrUpdateSessions,
+  commitSessionsAndUnprocessed,
   getSessionById,
   getSessionsById,
   bulkAddSessions,
@@ -181,7 +188,7 @@ const dataInterface: ClientInterface = {
   getExpiredMessages,
   getOutgoingWithoutExpiresAt,
   getNextExpiringMessage,
-  getNextTapToViewMessageToAgeOut,
+  getNextTapToViewMessageTimestampToAgeOut,
   getTapToViewMessagesNeedingErase,
   getOlderMessagesByConversation,
   getNewerMessagesByConversation,
@@ -736,6 +743,23 @@ async function removeAllItems() {
   await channels.removeAllItems();
 }
 
+// Sender Keys
+
+async function createOrUpdateSenderKey(key: SenderKeyType): Promise<void> {
+  await channels.createOrUpdateSenderKey(key);
+}
+async function getSenderKeyById(
+  id: string
+): Promise<SenderKeyType | undefined> {
+  return channels.getSenderKeyById(id);
+}
+async function removeAllSenderKeys(): Promise<void> {
+  await channels.removeAllSenderKeys();
+}
+async function getAllSenderKeys(): Promise<Array<SenderKeyType>> {
+  return channels.getAllSenderKeys();
+}
+
 // Sessions
 
 async function createOrUpdateSession(data: SessionType) {
@@ -743,6 +767,12 @@ async function createOrUpdateSession(data: SessionType) {
 }
 async function createOrUpdateSessions(array: Array<SessionType>) {
   await channels.createOrUpdateSessions(array);
+}
+async function commitSessionsAndUnprocessed(options: {
+  sessions: Array<SessionType>;
+  unprocessed: Array<UnprocessedType>;
+}) {
+  await channels.commitSessionsAndUnprocessed(options);
 }
 async function getSessionById(id: string) {
   const session = await channels.getSessionById(id);
@@ -1294,17 +1324,8 @@ async function getNextExpiringMessage({
   return null;
 }
 
-async function getNextTapToViewMessageToAgeOut({
-  Message,
-}: {
-  Message: typeof MessageModel;
-}) {
-  const message = await channels.getNextTapToViewMessageToAgeOut();
-  if (!message) {
-    return null;
-  }
-
-  return new Message(message);
+async function getNextTapToViewMessageTimestampToAgeOut() {
+  return channels.getNextTapToViewMessageTimestampToAgeOut();
 }
 async function getTapToViewMessagesNeedingErase({
   MessageCollection,
@@ -1330,22 +1351,14 @@ async function getUnprocessedById(id: string) {
   return channels.getUnprocessedById(id);
 }
 
-async function saveUnprocessed(
-  data: UnprocessedType,
-  { forceSave }: { forceSave?: boolean } = {}
-) {
-  const id = await channels.saveUnprocessed(_cleanData(data), { forceSave });
+async function saveUnprocessed(data: UnprocessedType) {
+  const id = await channels.saveUnprocessed(_cleanData(data));
 
   return id;
 }
 
-async function saveUnprocesseds(
-  arrayOfUnprocessed: Array<UnprocessedType>,
-  { forceSave }: { forceSave?: boolean } = {}
-) {
-  await channels.saveUnprocesseds(_cleanData(arrayOfUnprocessed), {
-    forceSave,
-  });
+async function saveUnprocesseds(arrayOfUnprocessed: Array<UnprocessedType>) {
+  await channels.saveUnprocesseds(_cleanData(arrayOfUnprocessed));
 }
 
 async function updateUnprocessedAttempts(id: string, attempts: number) {

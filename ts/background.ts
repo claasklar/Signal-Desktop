@@ -21,6 +21,7 @@ import { removeStorageKeyJobQueue } from './jobs/removeStorageKeyJobQueue';
 import { ourProfileKeyService } from './services/ourProfileKey';
 import { shouldRespondWithProfileKey } from './util/shouldRespondWithProfileKey';
 import { setToExpire } from './services/MessageUpdater';
+import { LatestQueue } from './util/LatestQueue';
 
 const MAX_ATTACHMENT_DOWNLOAD_AGE = 3600 * 72 * 1000;
 
@@ -66,6 +67,9 @@ export async function startApp(): Promise<void> {
 
   const profileKeyResponseQueue = new window.PQueue();
   profileKeyResponseQueue.pause();
+
+  const lightSessionResetQueue = new window.PQueue();
+  lightSessionResetQueue.pause();
 
   window.Whisper.deliveryReceiptQueue = new window.PQueue({
     concurrency: 1,
@@ -1470,6 +1474,29 @@ export async function startApp(): Promise<void> {
     }
   });
 
+  const reconnectToWebSocketQueue = new LatestQueue();
+
+  const enqueueReconnectToWebSocket = () => {
+    reconnectToWebSocketQueue.add(async () => {
+      if (!messageReceiver) {
+        window.log.info(
+          'reconnectToWebSocket: No messageReceiver. Early return.'
+        );
+        return;
+      }
+
+      window.log.info('reconnectToWebSocket starting...');
+      await disconnect();
+      connect();
+      window.log.info('reconnectToWebSocket complete.');
+    });
+  };
+
+  window.Whisper.events.on(
+    'mightBeUnlinked',
+    window._.debounce(enqueueReconnectToWebSocket, 1000, { maxWait: 5000 })
+  );
+
   function runStorageService() {
     window.Signal.Services.enableStorageService();
     window.textsecure.messaging.sendRequestKeySyncMessage();
@@ -1786,16 +1813,16 @@ export async function startApp(): Promise<void> {
     );
   }
 
-  function disconnect() {
+  async function disconnect() {
     window.log.info('disconnect');
 
     // Clear timer, since we're only called when the timer is expired
     disconnectTimer = null;
 
-    if (messageReceiver) {
-      messageReceiver.close();
-    }
     window.Signal.AttachmentDownloads.stop();
+    if (messageReceiver) {
+      await messageReceiver.close();
+    }
   }
 
   let connectCount = 0;
@@ -1896,6 +1923,7 @@ export async function startApp(): Promise<void> {
 
       // To avoid a flood of operations before we catch up, we pause some queues.
       profileKeyResponseQueue.pause();
+      lightSessionResetQueue.pause();
       window.Whisper.deliveryReceiptQueue.pause();
       window.Whisper.Notifications.disable();
 
@@ -2232,6 +2260,7 @@ export async function startApp(): Promise<void> {
     );
 
     profileKeyResponseQueue.start();
+    lightSessionResetQueue.start();
     window.Whisper.deliveryReceiptQueue.start();
     window.Whisper.Notifications.enable();
 
@@ -2304,6 +2333,7 @@ export async function startApp(): Promise<void> {
     //   very fast, and it looks like a network blip. But we need to suppress
     //   notifications in these scenarios too. So we listen for 'reconnect' events.
     profileKeyResponseQueue.pause();
+    lightSessionResetQueue.pause();
     window.Whisper.deliveryReceiptQueue.pause();
     window.Whisper.Notifications.disable();
   }
@@ -3120,6 +3150,7 @@ export async function startApp(): Promise<void> {
     }
 
     if (handleGroupCallUpdateMessage(data.message, messageDescriptor)) {
+      event.confirm();
       return Promise.resolve();
     }
 
@@ -3276,13 +3307,28 @@ export async function startApp(): Promise<void> {
     window.log.warn('background onError: Doing nothing with incoming error');
   }
 
-  type LightSessionResetEventType = {
+  type LightSessionResetEventType = Event & {
     senderUuid: string;
+    senderDevice: number;
   };
 
   function onLightSessionReset(event: LightSessionResetEventType) {
+    const { senderUuid, senderDevice } = event;
+
+    if (event.confirm) {
+      event.confirm();
+    }
+
+    // Postpone sending light session resets until the queue is empty
+    lightSessionResetQueue.add(() => {
+      window.textsecure.storage.protocol.lightSessionReset(
+        senderUuid,
+        senderDevice
+      );
+    });
+
     const conversationId = window.ConversationController.ensureContactIds({
-      uuid: event.senderUuid,
+      uuid: senderUuid,
     });
 
     if (!conversationId) {
