@@ -701,6 +701,10 @@
         "message": "О приложении Signal Desktop",
         "description": "Item under the Help menu, which opens a small about window"
     },
+    "screenShareWindow": {
+        "message": "Показ экрана",
+        "description": "Title for screen sharing window"
+    },
     "speech": {
         "message": "Речь",
         "description": "Item under the Edit menu, with 'start/stop speaking' items below it"
@@ -748,6 +752,10 @@
                 "example": "dog"
             }
         }
+    },
+    "noSearchResults--sms-only": {
+        "message": "Контакты SMS/MMS недоступны в Signal Desktop.",
+        "description": "Shown in the search left pane when no results were found and primary device has SMS/MMS handling enabled"
     },
     "noSearchResultsInConversation": {
         "message": "Нет результатов для «$searchTerm$» в $conversationName$",
@@ -1275,6 +1283,18 @@
         "message": "Включить микрофон",
         "description": "Button tooltip label for turning on the microphone"
     },
+    "calling__button--presenting-disabled": {
+        "message": "Показ отключён",
+        "description": "Button tooltip label for when screen sharing is disabled"
+    },
+    "calling__button--presenting-on": {
+        "message": "Начать показ",
+        "description": "Button tooltip label for starting to share screen"
+    },
+    "calling__button--presenting-off": {
+        "message": "Остановить показ",
+        "description": "Button tooltip label for stopping screen sharing"
+    },
     "calling__your-video-is-off": {
         "message": "Ваша камера отключена",
         "description": "Label in the calling lobby indicating that your camera is off"
@@ -1386,6 +1406,84 @@
     "calling__overflow__scroll-down": {
         "message": "Прокрутить вниз",
         "description": "Label for the \"scroll down\" button in a call's overflow area"
+    },
+    "calling__presenting--notification-title": {
+        "message": "Вы показываете всем свой экран.",
+        "description": "Title for the share screen notification"
+    },
+    "calling__presenting--notification-body": {
+        "message": "Нажмите здесь, чтобы вернуться к звонку, когда вы будете готовы остановить показ.",
+        "description": "Body text for the share screen notification"
+    },
+    "calling__presenting--info": {
+        "message": "Signal показывает $window$.",
+        "description": "Text that appears in the screen sharing controller to inform person that they are presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Application"
+            }
+        }
+    },
+    "calling__presenting--stop": {
+        "message": "Остановить показ",
+        "description": "Button for stopping screen sharing"
+    },
+    "calling__presenting--you-stopped": {
+        "message": "Вы остановили показ",
+        "description": "Toast that appears when someone stops presenting"
+    },
+    "calling__presenting--person-ongoing": {
+        "message": "$name$ показывает",
+        "description": "Title of call when someone is presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--person-stopped": {
+        "message": "$name$ остановил(-а) показ",
+        "description": "Toast that appears when someone stops presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--permission-title": {
+        "message": "Требуется разрешение",
+        "description": "Shown as the title for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--macos-permission-description": {
+        "message": "На компьютерах Apple Mac, использующих macOS Catalina 10.15 или новее, Signal необходимо разрешение, чтобы получить доступ к записи вашего экрана.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step1": {
+        "message": "Перейдите в Системные настройки и нажмите «Защита и безопасность».",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step2": {
+        "message": "Нажмите «Конфиденциальность».",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step3": {
+        "message": "Слева выберите «Запись экрана».",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step4": {
+        "message": "Справа поставьте флажок рядом с «Signal».",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-open": {
+        "message": "Открыть Системные настройки",
+        "description": "The button that opens your system preferences for the needs screen record permissions modal"
+    },
+    "calling__presenting--permission-cancel": {
+        "message": "Отменить",
+        "description": "The cancel button for the needs screen record permissions modal"
     },
     "alwaysRelayCallsDescription": {
         "message": "Всегда ретранслировать звонки",
@@ -3279,6 +3377,22 @@
         "message": "Покинуть звонок",
         "description": "Title for hang up button"
     },
+    "calling__SelectPresentingSourcesModal--title": {
+        "message": "Показать ваш экран",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--confirm": {
+        "message": "Начать показ экрана",
+        "description": "Confirm button for sharing screen modal"
+    },
+    "calling__SelectPresentingSourcesModal--entireScreen": {
+        "message": "Весь экран",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--window": {
+        "message": "Окно",
+        "description": "Title for the select your screen sharing sources modal"
+    },
     "callingDeviceSelection__label--video": {
         "message": "Видео",
         "description": "Label for video input selector"
@@ -4630,6 +4744,18 @@
     "CompositionArea--attach-file": {
         "message": "Прикрепить файл",
         "description": "Aria label for file attachment button in composition area"
+    },
+    "CompositionArea--sms-only__title": {
+        "message": "Этот человек не использует Signal",
+        "description": "Title for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__body": {
+        "message": "Signal Desktop не поддерживает общение с контактами, у которых нет Signal. Попросите этого человека установить Signal для более безопасного общения.",
+        "description": "Body for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__spinner-label": {
+        "message": "Проверяем, зарегистрирован ли контакт в Signal",
+        "description": "Displayed while checking if the contact is SMS-only"
     },
     "countMutedConversationsDescription": {
         "message": "Считать разговоры с отключёнными уведомлениями в счётчике на наклейке",

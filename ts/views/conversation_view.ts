@@ -11,6 +11,7 @@ import { MediaItemType } from '../components/LightboxGallery';
 import { MessageModel } from '../models/messages';
 import { MessageType } from '../state/ducks/conversations';
 import { assert } from '../util/assert';
+import { maybeParseUrl } from '../util/url';
 
 type GetLinkPreviewImageResult = {
   data: ArrayBuffer;
@@ -628,9 +629,6 @@ Whisper.ConversationView = Whisper.View.extend({
         bodyRanges: Array<typeof window.Whisper.BodyRangeType>,
         caretLocation?: number
       ) => this.onEditorStateChange(msg, bodyRanges, caretLocation),
-      setSecureInput: (enabled: boolean) => {
-        window.setSecureInput(enabled);
-      },
       onTextTooLong: () => this.showToast(Whisper.MessageBodyTooLongToast),
       onChooseAttachment: this.onChooseAttachment.bind(this),
       getQuotedMessage: () => this.model.get('quotedMessageId'),
@@ -2180,6 +2178,11 @@ Whisper.ConversationView = Whisper.View.extend({
 
     this.model.fetchLatestGroupV2Data();
     this.model.throttledMaybeMigrateV1Group();
+    assert(
+      this.model.throttledFetchSMSOnlyUUID !== undefined,
+      'Conversation model should be initialized'
+    );
+    this.model.throttledFetchSMSOnlyUUID();
 
     const statusPromise = this.model.throttledGetProfiles();
     // eslint-disable-next-line more/no-then
@@ -2255,9 +2258,6 @@ Whisper.ConversationView = Whisper.View.extend({
               {},
               document.querySelector('.module-ForwardMessageModal')
             ),
-          setSecureInput: (enabled: boolean) => {
-            window.setSecureInput(enabled);
-          },
         }
       ),
     });
@@ -3627,9 +3627,6 @@ Whisper.ConversationView = Whisper.View.extend({
     });
 
     const contact = this.quotedMessage.getContact();
-    if (contact) {
-      this.listenTo(contact, 'change', this.renderQuotedMesage);
-    }
 
     this.quoteView = new Whisper.ReactWrapperView({
       className: 'quote-wrapper',
@@ -3646,6 +3643,12 @@ Whisper.ConversationView = Whisper.View.extend({
         },
       },
     });
+
+    if (contact) {
+      this.quoteView.listenTo(contact, 'change', () => {
+        this.renderQuotedMessage();
+      });
+    }
   },
 
   showInvalidMessageToast(messageText?: string): boolean {
@@ -3937,10 +3940,8 @@ Whisper.ConversationView = Whisper.View.extend({
     url: string,
     abortSignal: any
   ): Promise<null | GetLinkPreviewResult> {
-    let urlObject;
-    try {
-      urlObject = new URL(url);
-    } catch (err) {
+    const urlObject = maybeParseUrl(url);
+    if (!urlObject) {
       return null;
     }
 

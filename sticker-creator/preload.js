@@ -9,7 +9,7 @@ const { readFile } = require('fs');
 const config = require('url').parse(window.location.toString(), true).query;
 const { noop, uniqBy } = require('lodash');
 const pMap = require('p-map');
-const client = require('libsignal-client');
+const client = require('@signalapp/signal-client');
 const { deriveStickerPackKey } = require('../ts/Crypto');
 const {
   getEnvironment,
@@ -239,7 +239,7 @@ window.encryptAndUpload = async (
   );
   const encryptedStickers = await pMap(
     uniqueStickers,
-    ({ imageData }) => encrypt(imageData, encryptionKey, iv),
+    ({ imageData }) => encrypt(imageData.buffer, encryptionKey, iv),
     {
       concurrency: 3,
       timeout: 1000 * 60 * 2,

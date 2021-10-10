@@ -701,6 +701,10 @@
         "message": "O aplikácii Signal Desktop",
         "description": "Item under the Help menu, which opens a small about window"
     },
+    "screenShareWindow": {
+        "message": "Zdieľaná obrazovka",
+        "description": "Title for screen sharing window"
+    },
     "speech": {
         "message": "Reč",
         "description": "Item under the Edit menu, with 'start/stop speaking' items below it"
@@ -748,6 +752,10 @@
                 "example": "dog"
             }
         }
+    },
+    "noSearchResults--sms-only": {
+        "message": "Kontakty pre SMS/MMS nie sú k dispozícii na Signal Desktop.",
+        "description": "Shown in the search left pane when no results were found and primary device has SMS/MMS handling enabled"
     },
     "noSearchResultsInConversation": {
         "message": "Žiadne výsledky pre „$searchTerm$“ v $conversationName$",
@@ -1275,6 +1283,18 @@
         "message": "Zapnúť mikrofón",
         "description": "Button tooltip label for turning on the microphone"
     },
+    "calling__button--presenting-disabled": {
+        "message": "Prezentácia je zakázaná",
+        "description": "Button tooltip label for when screen sharing is disabled"
+    },
+    "calling__button--presenting-on": {
+        "message": "Začať prezentovať",
+        "description": "Button tooltip label for starting to share screen"
+    },
+    "calling__button--presenting-off": {
+        "message": "Prestať prezentovať",
+        "description": "Button tooltip label for stopping screen sharing"
+    },
     "calling__your-video-is-off": {
         "message": "Váš fotoaparát je vypnutý",
         "description": "Label in the calling lobby indicating that your camera is off"
@@ -1386,6 +1406,84 @@
     "calling__overflow__scroll-down": {
         "message": "Posunúť nadol",
         "description": "Label for the \"scroll down\" button in a call's overflow area"
+    },
+    "calling__presenting--notification-title": {
+        "message": "Prezentujete všetkým.",
+        "description": "Title for the share screen notification"
+    },
+    "calling__presenting--notification-body": {
+        "message": "Keď budete pripravení ukončiť prezentovanie, kliknutím sem a vrátite sa k hovoru.",
+        "description": "Body text for the share screen notification"
+    },
+    "calling__presenting--info": {
+        "message": "Signal zdieľa $window$.",
+        "description": "Text that appears in the screen sharing controller to inform person that they are presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Application"
+            }
+        }
+    },
+    "calling__presenting--stop": {
+        "message": "Prestať zdieľať",
+        "description": "Button for stopping screen sharing"
+    },
+    "calling__presenting--you-stopped": {
+        "message": "Prestali ste prezentovať",
+        "description": "Toast that appears when someone stops presenting"
+    },
+    "calling__presenting--person-ongoing": {
+        "message": "$name$ prezentuje",
+        "description": "Title of call when someone is presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--person-stopped": {
+        "message": "$name$ prestal prezentovať",
+        "description": "Toast that appears when someone stops presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--permission-title": {
+        "message": "Je potrebné povolenie",
+        "description": "Shown as the title for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--macos-permission-description": {
+        "message": "V počítači Apple Mac s macOS Catalina verzie 10.15 alebo novší, je potrebné povolenie na prístup k záznamu obrazovky vášho počítača pre Signal.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step1": {
+        "message": "Prejdite na položku Predvoľby systému a potom kliknite na položku Zabezpečenie a ochrana osobných údajov.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step2": {
+        "message": "Kliknite na položku Súkromie.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step3": {
+        "message": "Vľavo kliknite na položku Záznam obrazovky.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step4": {
+        "message": "Vpravo začiarknite políčko Signal.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-open": {
+        "message": "Otvorte Predvoľby systému",
+        "description": "The button that opens your system preferences for the needs screen record permissions modal"
+    },
+    "calling__presenting--permission-cancel": {
+        "message": "Zrušiť",
+        "description": "The cancel button for the needs screen record permissions modal"
     },
     "alwaysRelayCallsDescription": {
         "message": "Vždy presmerovať hovory",
@@ -3279,6 +3377,22 @@
         "message": "Opustiť hovor",
         "description": "Title for hang up button"
     },
+    "calling__SelectPresentingSourcesModal--title": {
+        "message": "Zdieľať svoju obrazovku",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--confirm": {
+        "message": "Zdieľať obrazovku",
+        "description": "Confirm button for sharing screen modal"
+    },
+    "calling__SelectPresentingSourcesModal--entireScreen": {
+        "message": "Celá obrazovka",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--window": {
+        "message": "Okno",
+        "description": "Title for the select your screen sharing sources modal"
+    },
     "callingDeviceSelection__label--video": {
         "message": "Video",
         "description": "Label for video input selector"
@@ -4630,6 +4744,18 @@
     "CompositionArea--attach-file": {
         "message": "Pripojiť súbor",
         "description": "Aria label for file attachment button in composition area"
+    },
+    "CompositionArea--sms-only__title": {
+        "message": "Táto osoba nepoužíva Signal",
+        "description": "Title for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__body": {
+        "message": "Aplikácia Signal Desktop nepodporuje zasielanie správ kontaktom bez Signal. Požiadajte túto osobu, aby si nainštalovala program Signal, aby ste zabezpečili bezpečnejšie zasielanie správ.",
+        "description": "Body for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__spinner-label": {
+        "message": "Kontroluje sa stav registrácie kontaktu",
+        "description": "Displayed while checking if the contact is SMS-only"
     },
     "countMutedConversationsDescription": {
         "message": "Počítať stlmené konverzácie v počítadle pri odznaku.",

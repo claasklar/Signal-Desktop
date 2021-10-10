@@ -1412,7 +1412,7 @@
         "description": "Header for general options on the settings screen"
     },
     "spellCheckDescription": {
-        "message": "Enable spell check",
+        "message": "Activa la comprovació ortogràfica",
         "description": "Description of the spell check setting"
     },
     "spellCheckWillBeEnabled": {
@@ -1424,7 +1424,7 @@
         "description": "Shown when the user disables spellcheck to indicate that they must restart Signal."
     },
     "autoLaunchDescription": {
-        "message": "Open at computer login",
+        "message": "Obre en entrar a l'ordinador",
         "description": "Description for the automatic launch setting"
     },
     "clearDataHeader": {
@@ -5114,7 +5114,7 @@
         "description": "Shown in the message request warning dialog. Clicking this button will open a page on Signal's support site"
     },
     "ContactSpoofing__same-name": {
-        "message": "Review requests carefully. Signal found another contact with the same name. $link$",
+        "message": "Reviseu les sol·licituds amb atenció. El Signal ha trobat un altre contacte amb el mateix nom. $link$",
         "description": "Shown in the timeline warning when you have a message request from someone with the same name as someone else",
         "placeholders": {
             "link": {
@@ -5124,11 +5124,11 @@
         }
     },
     "ContactSpoofing__same-name__link": {
-        "message": "Review request",
+        "message": "Reviseu la sol·licitud",
         "description": "Shown in the timeline warning when you have a message request from someone with the same name as someone else"
     },
     "ContactSpoofingReviewDialog__title": {
-        "message": "Review request",
+        "message": "Reviseu la sol·licitud",
         "description": "Title for the contact name spoofing review dialog"
     },
     "ContactSpoofingReviewDialog__description": {
@@ -5164,7 +5164,7 @@
         "description": "Body of the captcha dialog that can be closed"
     },
     "CaptchaDialog--can_close__skip-verification": {
-        "message": "Skip verification",
+        "message": "Omet la verificació",
         "description": "Skip button of the captcha dialog that can be closed"
     },
     "verificationComplete": {
@@ -5172,11 +5172,11 @@
         "description": "Displayed after successful captcha"
     },
     "verificationFailed": {
-        "message": "Verification failed. Please retry later.",
+        "message": "Ha fallat la verificació. Si us plau, proveu-ho més tard.",
         "description": "Displayed after unsuccessful captcha"
     },
     "deleteForEveryoneFailed": {
-        "message": "Failed to delete message for everyone. Please retry later.",
+        "message": "Ha fallat suprimir el missatge per a tothom. Si us plau, proveu-ho més tard.",
         "description": "Displayed when delete-for-everyone has failed to send to all recepients"
     }
 }

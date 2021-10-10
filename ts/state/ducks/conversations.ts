@@ -114,6 +114,7 @@ export type ConversationType = {
   searchableTitle?: string;
   unreadCount?: number;
   isSelected?: boolean;
+  isFetchingUUID?: boolean;
   typingContact?: {
     avatarPath?: string;
     color?: ColorType;
@@ -179,15 +180,6 @@ export type MessageType = {
   reactions?: Array<{
     emoji: string;
     timestamp: number;
-    from: {
-      id: string;
-      color?: string;
-      avatarPath?: string;
-      name?: string;
-      profileName?: string;
-      isMe?: boolean;
-      phoneNumber?: string;
-    };
   }>;
   deletedForEveryone?: boolean;
 
@@ -577,7 +569,6 @@ export type ToggleConversationInChooseMembersActionType = {
     maxGroupSize: number;
   };
 };
-
 export type ConversationActionType =
   | CantAddContactToGroupActionType
   | ClearChangedMessagesActionType
@@ -1419,8 +1410,9 @@ export function reducer(
     let { showArchived } = state;
 
     const existing = conversationLookup[id];
-    // In the change case we only modify the lookup if we already had that conversation
-    if (!existing) {
+    // We only modify the lookup if we already had that conversation and the conversation
+    //   changed.
+    if (!existing || data === existing) {
       return state;
     }
 

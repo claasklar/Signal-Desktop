@@ -49,6 +49,7 @@ import {
   MessageMetricsType,
   PreKeyType,
   SearchResultMessageType,
+  SenderKeyType,
   ServerInterface,
   SessionType,
   SignedPreKeyType,
@@ -86,7 +87,7 @@ type StickerRow = Readonly<{
 
 type EmptyQuery = [];
 type ArrayQuery = Array<Array<null | number | string>>;
-type Query = { [key: string]: null | number | string };
+type Query = { [key: string]: null | number | string | Buffer };
 
 // Because we can't force this module to conform to an interface, we narrow our exports
 //   to this one default export, which does conform to the interface.
@@ -125,8 +126,14 @@ const dataInterface: ServerInterface = {
   removeItemById,
   removeAllItems,
 
+  createOrUpdateSenderKey,
+  getSenderKeyById,
+  removeAllSenderKeys,
+  getAllSenderKeys,
+
   createOrUpdateSession,
   createOrUpdateSessions,
+  commitSessionsAndUnprocessed,
   getSessionById,
   getSessionsById,
   bulkAddSessions,
@@ -171,7 +178,7 @@ const dataInterface: ServerInterface = {
   getExpiredMessages,
   getOutgoingWithoutExpiresAt,
   getNextExpiringMessage,
-  getNextTapToViewMessageToAgeOut,
+  getNextTapToViewMessageTimestampToAgeOut,
   getTapToViewMessagesNeedingErase,
   getOlderMessagesByConversation,
   getNewerMessagesByConversation,
@@ -257,6 +264,10 @@ function prepare(db: Database, query: string): Statement<Query> {
   return result;
 }
 
+function assertSync<T, X>(value: T extends Promise<X> ? never : T): T {
+  return value;
+}
+
 function objectToJSON(data: any) {
   return JSON.stringify(data);
 }
@@ -318,7 +329,8 @@ function setUserVersion(db: Database, version: number): void {
 function keyDatabase(db: Database, key: string): void {
   // https://www.zetetic.net/sqlcipher/sqlcipher-api/#key
   db.pragma(`key = "x'${key}'"`);
-
+}
+function switchToWAL(db: Database): void {
   // https://sqlite.org/wal.html
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
@@ -373,6 +385,7 @@ function openAndMigrateDatabase(filePath: string, key: string) {
   try {
     db = new SQL(filePath);
     keyDatabase(db, key);
+    switchToWAL(db);
     migrateSchemaVersion(db);
 
     return db;
@@ -399,6 +412,7 @@ function openAndMigrateDatabase(filePath: string, key: string) {
   keyDatabase(db, key);
 
   db.pragma('cipher_migrate');
+  switchToWAL(db);
 
   return db;
 }
@@ -1625,6 +1639,7 @@ async function updateToSchemaVersion25(currentVersion: number, db: Database) {
 
     db.pragma('user_version = 25');
   })();
+  console.log('updateToSchemaVersion25: success!');
 }
 
 async function updateToSchemaVersion26(currentVersion: number, db: Database) {
@@ -1660,6 +1675,7 @@ async function updateToSchemaVersion26(currentVersion: number, db: Database) {
 
     db.pragma('user_version = 26');
   })();
+  console.log('updateToSchemaVersion26: success!');
 }
 
 async function updateToSchemaVersion27(currentVersion: number, db: Database) {
@@ -1697,6 +1713,7 @@ async function updateToSchemaVersion27(currentVersion: number, db: Database) {
 
     db.pragma('user_version = 27');
   })();
+  console.log('updateToSchemaVersion27: success!');
 }
 
 function updateToSchemaVersion28(currentVersion: number, db: Database) {
@@ -1718,6 +1735,7 @@ function updateToSchemaVersion28(currentVersion: number, db: Database) {
 
     db.pragma('user_version = 28');
   })();
+  console.log('updateToSchemaVersion28: success!');
 }
 
 function updateToSchemaVersion29(currentVersion: number, db: Database) {
@@ -1751,6 +1769,72 @@ function updateToSchemaVersion29(currentVersion: number, db: Database) {
 
     db.pragma('user_version = 29');
   })();
+  console.log('updateToSchemaVersion29: success!');
+}
+
+function updateToSchemaVersion30(currentVersion: number, db: Database) {
+  if (currentVersion >= 30) {
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE senderKeys(
+        id TEXT PRIMARY KEY NOT NULL,
+        senderId TEXT NOT NULL,
+        distributionId TEXT NOT NULL,
+        data BLOB NOT NULL,
+        lastUpdatedDate NUMBER NOT NULL
+      );
+    `);
+
+    db.pragma('user_version = 30');
+  })();
+  console.log('updateToSchemaVersion30: success!');
+}
+
+function updateToSchemaVersion31(currentVersion: number, db: Database): void {
+  if (currentVersion >= 31) {
+    return;
+  }
+  console.log('updateToSchemaVersion10: starting...');
+  db.transaction(() => {
+    db.exec(`
+      DROP INDEX unprocessed_id;
+      DROP INDEX unprocessed_timestamp;
+      ALTER TABLE unprocessed RENAME TO unprocessed_old;
+
+      CREATE TABLE unprocessed(
+        id STRING PRIMARY KEY ASC,
+        timestamp INTEGER,
+        version INTEGER,
+        attempts INTEGER,
+        envelope TEXT,
+        decrypted TEXT,
+        source TEXT,
+        sourceDevice TEXT,
+        serverTimestamp INTEGER,
+        sourceUuid STRING
+      );
+
+      CREATE INDEX unprocessed_timestamp ON unprocessed (
+        timestamp
+      );
+
+      INSERT OR REPLACE INTO unprocessed
+        (id, timestamp, version, attempts, envelope, decrypted, source,
+         sourceDevice, serverTimestamp, sourceUuid)
+      SELECT
+        id, timestamp, version, attempts, envelope, decrypted, source,
+         sourceDevice, serverTimestamp, sourceUuid
+      FROM unprocessed_old;
+
+      DROP TABLE unprocessed_old;
+    `);
+
+    db.pragma('user_version = 31');
+  })();
+  console.log('updateToSchemaVersion31: success!');
 }
 
 const SCHEMA_VERSIONS = [
@@ -1783,6 +1867,8 @@ const SCHEMA_VERSIONS = [
   updateToSchemaVersion27,
   updateToSchemaVersion28,
   updateToSchemaVersion29,
+  updateToSchemaVersion30,
+  updateToSchemaVersion31,
 ];
 
 function updateSchema(db: Database): void {
@@ -2087,8 +2173,51 @@ function removeAllItems(): Promise<void> {
   return removeAllFromTable(ITEMS_TABLE);
 }
 
+async function createOrUpdateSenderKey(key: SenderKeyType): Promise<void> {
+  const db = getInstance();
+
+  prepare(
+    db,
+    `
+    INSERT OR REPLACE INTO senderKeys (
+      id,
+      senderId,
+      distributionId,
+      data,
+      lastUpdatedDate
+    ) values (
+      $id,
+      $senderId,
+      $distributionId,
+      $data,
+      $lastUpdatedDate
+    )
+    `
+  ).run(key);
+}
+async function getSenderKeyById(
+  id: string
+): Promise<SenderKeyType | undefined> {
+  const db = getInstance();
+  const row = prepare(db, 'SELECT * FROM senderKeys WHERE id = $id').get({
+    id,
+  });
+
+  return row;
+}
+async function removeAllSenderKeys(): Promise<void> {
+  const db = getInstance();
+  prepare(db, 'DELETE FROM senderKeys').run({});
+}
+async function getAllSenderKeys(): Promise<Array<SenderKeyType>> {
+  const db = getInstance();
+  const rows = prepare(db, 'SELECT * FROM senderKeys').all({});
+
+  return rows;
+}
+
 const SESSIONS_TABLE = 'sessions';
-async function createOrUpdateSession(data: SessionType): Promise<void> {
+function createOrUpdateSessionSync(data: SessionType): void {
   const db = getInstance();
   const { id, conversationId } = data;
   if (!id) {
@@ -2121,6 +2250,10 @@ async function createOrUpdateSession(data: SessionType): Promise<void> {
     json: objectToJSON(data),
   });
 }
+async function createOrUpdateSession(data: SessionType): Promise<void> {
+  return createOrUpdateSessionSync(data);
+}
+
 async function createOrUpdateSessions(
   array: Array<SessionType>
 ): Promise<void> {
@@ -2128,7 +2261,27 @@ async function createOrUpdateSessions(
 
   db.transaction(() => {
     for (const item of array) {
-      createOrUpdateSession(item);
+      assertSync(createOrUpdateSessionSync(item));
+    }
+  })();
+}
+
+async function commitSessionsAndUnprocessed({
+  sessions,
+  unprocessed,
+}: {
+  sessions: Array<SessionType>;
+  unprocessed: Array<UnprocessedType>;
+}): Promise<void> {
+  const db = getInstance();
+
+  db.transaction(() => {
+    for (const item of sessions) {
+      assertSync(createOrUpdateSessionSync(item));
+    }
+
+    for (const item of unprocessed) {
+      assertSync(saveUnprocessedSync(item));
     }
   })();
 }
@@ -2180,10 +2333,10 @@ function getAllSessions(): Promise<Array<SessionType>> {
   return getAllFromTable(SESSIONS_TABLE);
 }
 
-async function createOrUpdate(
+function createOrUpdateSync(
   table: string,
   data: Record<string, unknown> & { id: string | number }
-): Promise<void> {
+): void {
   const db = getInstance();
   const { id } = data;
   if (!id) {
@@ -2206,6 +2359,13 @@ async function createOrUpdate(
   });
 }
 
+async function createOrUpdate(
+  table: string,
+  data: Record<string, unknown> & { id: string | number }
+): Promise<void> {
+  return createOrUpdateSync(table, data);
+}
+
 async function bulkAdd(
   table: string,
   array: Array<Record<string, unknown> & { id: string | number }>
@@ -2214,7 +2374,7 @@ async function bulkAdd(
 
   db.transaction(() => {
     for (const data of array) {
-      createOrUpdate(table, data);
+      assertSync(createOrUpdateSync(table, data));
     }
   })();
 }
@@ -2302,10 +2462,10 @@ async function getConversationCount(): Promise<number> {
   return row['count(*)'];
 }
 
-async function saveConversation(
+function saveConversationSync(
   data: ConversationType,
   db = getInstance()
-): Promise<void> {
+): void {
   const {
     active_at,
     e164,
@@ -2385,6 +2545,13 @@ async function saveConversation(
   });
 }
 
+async function saveConversation(
+  data: ConversationType,
+  db = getInstance()
+): Promise<void> {
+  return saveConversationSync(data, db);
+}
+
 async function saveConversations(
   arrayOfConversations: Array<ConversationType>
 ): Promise<void> {
@@ -2392,12 +2559,12 @@ async function saveConversations(
 
   db.transaction(() => {
     for (const conversation of arrayOfConversations) {
-      saveConversation(conversation);
+      assertSync(saveConversationSync(conversation));
     }
   })();
 }
 
-async function updateConversation(data: ConversationType): Promise<void> {
+function updateConversationSync(data: ConversationType): void {
   const db = getInstance();
   const {
     id,
@@ -2459,6 +2626,10 @@ async function updateConversation(data: ConversationType): Promise<void> {
   });
 }
 
+async function updateConversation(data: ConversationType): Promise<void> {
+  return updateConversationSync(data);
+}
+
 async function updateConversations(
   array: Array<ConversationType>
 ): Promise<void> {
@@ -2466,7 +2637,7 @@ async function updateConversations(
 
   db.transaction(() => {
     for (const item of array) {
-      updateConversation(item);
+      assertSync(updateConversationSync(item));
     }
   })();
 }
@@ -2751,20 +2922,22 @@ async function getMessageCount(conversationId?: string): Promise<number> {
   return row['count(*)'];
 }
 
-async function saveMessage(
+function saveMessageSync(
   data: MessageType,
   options: { forceSave?: boolean; alreadyInTransaction?: boolean } = {}
-): Promise<string> {
+): string {
   const db = getInstance();
 
   const { forceSave, alreadyInTransaction } = options;
 
   if (!alreadyInTransaction) {
     return db.transaction(() => {
-      return saveMessage(data, {
-        ...options,
-        alreadyInTransaction: true,
-      });
+      return assertSync(
+        saveMessageSync(data, {
+          ...options,
+          alreadyInTransaction: true,
+        })
+      );
     })();
   }
 
@@ -2910,6 +3083,13 @@ async function saveMessage(
   return toCreate.id;
 }
 
+async function saveMessage(
+  data: MessageType,
+  options: { forceSave?: boolean; alreadyInTransaction?: boolean }
+): Promise<string> {
+  return saveMessageSync(data, options);
+}
+
 async function saveMessages(
   arrayOfMessages: Array<MessageType>,
   { forceSave }: { forceSave?: boolean } = {}
@@ -2918,7 +3098,9 @@ async function saveMessages(
 
   db.transaction(() => {
     for (const message of arrayOfMessages) {
-      saveMessage(message, { forceSave, alreadyInTransaction: true });
+      assertSync(
+        saveMessageSync(message, { forceSave, alreadyInTransaction: true })
+      );
     }
   })();
 }
@@ -2942,9 +3124,11 @@ async function removeMessages(ids: Array<string>): Promise<void> {
 
 async function getMessageById(id: string): Promise<MessageType | undefined> {
   const db = getInstance();
-  const row = db.prepare<Query>('SELECT * FROM messages WHERE id = $id;').get({
-    id,
-  });
+  const row = db
+    .prepare<Query>('SELECT json FROM messages WHERE id = $id;')
+    .get({
+      id,
+    });
 
   if (!row) {
     return undefined;
@@ -3788,11 +3972,11 @@ async function getNextExpiringMessage(): Promise<MessageType | undefined> {
   return jsonToObject(rows[0].json);
 }
 
-async function getNextTapToViewMessageToAgeOut(): Promise<
-  MessageType | undefined
+async function getNextTapToViewMessageTimestampToAgeOut(): Promise<
+  undefined | number
 > {
   const db = getInstance();
-  const rows = db
+  const row = db
     .prepare<EmptyQuery>(
       `
       SELECT json FROM messages
@@ -3803,13 +3987,15 @@ async function getNextTapToViewMessageToAgeOut(): Promise<
       LIMIT 1;
       `
     )
-    .all();
+    .get();
 
-  if (!rows || rows.length < 1) {
+  if (!row) {
     return undefined;
   }
 
-  return jsonToObject(rows[0].json);
+  const data = jsonToObject(row.json);
+  const result = data.received_at_ms || data.received_at;
+  return isNormalNumber(result) ? result : undefined;
 }
 
 async function getTapToViewMessagesNeedingErase(): Promise<Array<MessageType>> {
@@ -3835,75 +4021,79 @@ async function getTapToViewMessagesNeedingErase(): Promise<Array<MessageType>> {
   return rows.map(row => jsonToObject(row.json));
 }
 
-async function saveUnprocessed(
-  data: UnprocessedType,
-  { forceSave }: { forceSave?: boolean } = {}
-): Promise<string> {
+function saveUnprocessedSync(data: UnprocessedType): string {
   const db = getInstance();
-  const { id, timestamp, version, attempts, envelope } = data;
+  const {
+    id,
+    timestamp,
+    version,
+    attempts,
+    envelope,
+    source,
+    sourceUuid,
+    sourceDevice,
+    serverTimestamp,
+    decrypted,
+  } = data;
   if (!id) {
     throw new Error('saveUnprocessed: id was falsey');
-  }
-
-  if (forceSave) {
-    prepare(
-      db,
-      `
-      INSERT INTO unprocessed (
-        id,
-        timestamp,
-        version,
-        attempts,
-        envelope
-      ) values (
-        $id,
-        $timestamp,
-        $version,
-        $attempts,
-        $envelope
-      );
-      `
-    ).run({
-      id,
-      timestamp,
-      version,
-      attempts,
-      envelope,
-    });
-
-    return id;
   }
 
   prepare(
     db,
     `
-    UPDATE unprocessed SET
-      timestamp = $timestamp,
-      version = $version,
-      attempts = $attempts,
-      envelope = $envelope
-    WHERE id = $id;
+    INSERT OR REPLACE INTO unprocessed (
+      id,
+      timestamp,
+      version,
+      attempts,
+      envelope,
+      source,
+      sourceUuid,
+      sourceDevice,
+      serverTimestamp,
+      decrypted
+    ) values (
+      $id,
+      $timestamp,
+      $version,
+      $attempts,
+      $envelope,
+      $source,
+      $sourceUuid,
+      $sourceDevice,
+      $serverTimestamp,
+      $decrypted
+    );
     `
   ).run({
     id,
     timestamp,
     version,
     attempts,
-    envelope,
+    envelope: envelope || null,
+    source: source || null,
+    sourceUuid: sourceUuid || null,
+    sourceDevice: sourceDevice || null,
+    serverTimestamp: serverTimestamp || null,
+    decrypted: decrypted || null,
   });
 
   return id;
 }
 
+async function saveUnprocessed(data: UnprocessedType): Promise<string> {
+  return saveUnprocessedSync(data);
+}
+
 async function saveUnprocesseds(
-  arrayOfUnprocessed: Array<UnprocessedType>,
-  { forceSave }: { forceSave?: boolean } = {}
+  arrayOfUnprocessed: Array<UnprocessedType>
 ): Promise<void> {
   const db = getInstance();
 
   db.transaction(() => {
     for (const unprocessed of arrayOfUnprocessed) {
-      saveUnprocessed(unprocessed, { forceSave });
+      assertSync(saveUnprocessedSync(unprocessed));
     }
   })();
 }
@@ -3924,10 +4114,11 @@ async function updateUnprocessedAttempts(
     attempts,
   });
 }
-async function updateUnprocessedWithData(
+
+function updateUnprocessedWithDataSync(
   id: string,
   data: UnprocessedUpdateType
-): Promise<void> {
+): void {
   const db = getInstance();
   const { source, sourceUuid, sourceDevice, serverTimestamp, decrypted } = data;
 
@@ -3951,6 +4142,14 @@ async function updateUnprocessedWithData(
     decrypted: decrypted || null,
   });
 }
+
+async function updateUnprocessedWithData(
+  id: string,
+  data: UnprocessedUpdateType
+): Promise<void> {
+  return updateUnprocessedWithDataSync(id, data);
+}
+
 async function updateUnprocessedsWithData(
   arrayOfUnprocessed: Array<{ id: string; data: UnprocessedUpdateType }>
 ): Promise<void> {
@@ -3958,7 +4157,7 @@ async function updateUnprocessedsWithData(
 
   db.transaction(() => {
     for (const { id, data } of arrayOfUnprocessed) {
-      updateUnprocessedWithData(id, data);
+      assertSync(updateUnprocessedWithDataSync(id, data));
     }
   })();
 }
@@ -4641,6 +4840,7 @@ async function removeAll(): Promise<void> {
       DELETE FROM items;
       DELETE FROM messages;
       DELETE FROM preKeys;
+      DELETE FROM senderKeys;
       DELETE FROM sessions;
       DELETE FROM signedPreKeys;
       DELETE FROM unprocessed;
@@ -4663,6 +4863,7 @@ async function removeAllConfiguration(): Promise<void> {
       DELETE FROM identityKeys;
       DELETE FROM items;
       DELETE FROM preKeys;
+      DELETE FROM senderKeys;
       DELETE FROM sessions;
       DELETE FROM signedPreKeys;
       DELETE FROM unprocessed;

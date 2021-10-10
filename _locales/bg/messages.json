@@ -701,6 +701,10 @@
         "message": "Относно Сигнал Десктоп",
         "description": "Item under the Help menu, which opens a small about window"
     },
+    "screenShareWindow": {
+        "message": "Sharing screen",
+        "description": "Title for screen sharing window"
+    },
     "speech": {
         "message": "Говор",
         "description": "Item under the Edit menu, with 'start/stop speaking' items below it"
@@ -748,6 +752,10 @@
                 "example": "dog"
             }
         }
+    },
+    "noSearchResults--sms-only": {
+        "message": "SMS/MMS contacts are not available on Desktop.",
+        "description": "Shown in the search left pane when no results were found and primary device has SMS/MMS handling enabled"
     },
     "noSearchResultsInConversation": {
         "message": "Няма резултати за \"$searchTerm$\" в $conversationName$",
@@ -1275,6 +1283,18 @@
         "message": "Премахни заглушаването на микрофона",
         "description": "Button tooltip label for turning on the microphone"
     },
+    "calling__button--presenting-disabled": {
+        "message": "Presenting disabled",
+        "description": "Button tooltip label for when screen sharing is disabled"
+    },
+    "calling__button--presenting-on": {
+        "message": "Start presenting",
+        "description": "Button tooltip label for starting to share screen"
+    },
+    "calling__button--presenting-off": {
+        "message": "Stop presenting",
+        "description": "Button tooltip label for stopping screen sharing"
+    },
     "calling__your-video-is-off": {
         "message": "Камерата е изключена",
         "description": "Label in the calling lobby indicating that your camera is off"
@@ -1384,8 +1404,86 @@
         "description": "Label for the \"scroll up\" button in a call's overflow area"
     },
     "calling__overflow__scroll-down": {
-        "message": "Scroll down",
+        "message": "Скролни надолу",
         "description": "Label for the \"scroll down\" button in a call's overflow area"
+    },
+    "calling__presenting--notification-title": {
+        "message": "You're presenting to everyone.",
+        "description": "Title for the share screen notification"
+    },
+    "calling__presenting--notification-body": {
+        "message": "Click here to return to the call when you're ready to stop presenting.",
+        "description": "Body text for the share screen notification"
+    },
+    "calling__presenting--info": {
+        "message": "Signal is sharing $window$.",
+        "description": "Text that appears in the screen sharing controller to inform person that they are presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Application"
+            }
+        }
+    },
+    "calling__presenting--stop": {
+        "message": "Stop sharing",
+        "description": "Button for stopping screen sharing"
+    },
+    "calling__presenting--you-stopped": {
+        "message": "You stopped presenting",
+        "description": "Toast that appears when someone stops presenting"
+    },
+    "calling__presenting--person-ongoing": {
+        "message": "$name$ is presenting",
+        "description": "Title of call when someone is presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--person-stopped": {
+        "message": "$name$ stopped presenting",
+        "description": "Toast that appears when someone stops presenting",
+        "placeholders": {
+            "name": {
+                "content": "$1",
+                "example": "Maddie"
+            }
+        }
+    },
+    "calling__presenting--permission-title": {
+        "message": "Permission needed",
+        "description": "Shown as the title for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--macos-permission-description": {
+        "message": "On an Apple Mac computer using macOS Catalina version 10.15 or later, Signal needs permission to access your computer's screen recording.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step1": {
+        "message": "Go to System Preferences and then click Security & Privacy.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step2": {
+        "message": "Click Privacy.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step3": {
+        "message": "On the left, click Screen Recording.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-instruction-step4": {
+        "message": "On the right, check the Signal box.",
+        "description": "Shown as the description for the modal that requests screen recording permissions"
+    },
+    "calling__presenting--permission-open": {
+        "message": "Open System Preferences",
+        "description": "The button that opens your system preferences for the needs screen record permissions modal"
+    },
+    "calling__presenting--permission-cancel": {
+        "message": "Отказ",
+        "description": "The cancel button for the needs screen record permissions modal"
     },
     "alwaysRelayCallsDescription": {
         "message": "Винаги да се използва прехвърляне на обажданията",
@@ -1412,7 +1510,7 @@
         "description": "Header for general options on the settings screen"
     },
     "spellCheckDescription": {
-        "message": "Enable spell check",
+        "message": "Активирай граматическа проверка при писане на съобщението",
         "description": "Description of the spell check setting"
     },
     "spellCheckWillBeEnabled": {
@@ -1870,7 +1968,7 @@
         "description": "Label shown when there are no conversations to compose to"
     },
     "chooseGroupMembers__title": {
-        "message": "Choose members",
+        "message": "Избери членове",
         "description": "The title for the 'choose group members' left pane screen"
     },
     "chooseGroupMembers__back-button": {
@@ -3279,6 +3377,22 @@
         "message": "Напусни повикването",
         "description": "Title for hang up button"
     },
+    "calling__SelectPresentingSourcesModal--title": {
+        "message": "Share your screen",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--confirm": {
+        "message": "Share screen",
+        "description": "Confirm button for sharing screen modal"
+    },
+    "calling__SelectPresentingSourcesModal--entireScreen": {
+        "message": "Entire screen",
+        "description": "Title for the select your screen sharing sources modal"
+    },
+    "calling__SelectPresentingSourcesModal--window": {
+        "message": "A window",
+        "description": "Title for the select your screen sharing sources modal"
+    },
     "callingDeviceSelection__label--video": {
         "message": "Видео",
         "description": "Label for video input selector"
@@ -3390,11 +3504,11 @@
         "description": "Shown if you click a group link and we can't get information about it"
     },
     "GroupV2--join--link-revoked--title": {
-        "message": "Can’t Join Group",
+        "message": "Влизането в групата не е възможно",
         "description": "Shown if you click a group link and we can't get information about it"
     },
     "GroupV2--join--link-revoked": {
-        "message": "This group link is no longer valid.",
+        "message": "Груповата връзка не е валидна",
         "description": "Shown if you click a group link and we can't get information about it"
     },
     "GroupV2--join--prompt-with-approval": {
@@ -3414,7 +3528,7 @@
         "description": "The button to cancel request to join the group"
     },
     "GroupV2--join--cancel-request-to-join--confirmation": {
-        "message": "Cancel your request to join this group?",
+        "message": "Отмени заявката за присъединяване към групата?",
         "description": "A confirmation message that shows after you click the button"
     },
     "GroupV2--join--cancel-request-to-join--yes": {
@@ -3688,7 +3802,7 @@
         }
     },
     "GroupV2--access-invite-link--enabled--unknown": {
-        "message": "Admin approval for the group link has been enabled.",
+        "message": "Одобрението на администратора за груповата връзка е включено.",
         "description": "Shown in timeline or conversation preview when v2 group changes"
     },
     "GroupV2--member-add--invited--you": {
@@ -4631,6 +4745,18 @@
         "message": "Добави файл",
         "description": "Aria label for file attachment button in composition area"
     },
+    "CompositionArea--sms-only__title": {
+        "message": "This person isn’t using Signal",
+        "description": "Title for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__body": {
+        "message": "Signal Desktop does not support messaging non-Signal contacts. Ask this person to install Signal for a more secure messaging experience.",
+        "description": "Body for the composition area for the SMS-only contact"
+    },
+    "CompositionArea--sms-only__spinner-label": {
+        "message": "Checking contact's registration status",
+        "description": "Displayed while checking if the contact is SMS-only"
+    },
     "countMutedConversationsDescription": {
         "message": "Показване на броя разговори в тих режим",
         "description": "Description for counting muted conversations in badge setting"
@@ -4700,7 +4826,7 @@
         "description": "This is the label for the 'who can add members' panel"
     },
     "ConversationDetails--add-members-info": {
-        "message": "Choose who can add members to this group.",
+        "message": "Изберете кой може да добавя членове в групата.",
         "description": "This is the additional info for the 'who can add members' panel"
     },
     "ConversationDetails--requests-and-invites": {
@@ -4750,7 +4876,7 @@
         "description": "This is the modal button to confirm blocking a group"
     },
     "ConversationDetailsHeader--members": {
-        "message": "$number$ members",
+        "message": "$number$ члена",
         "description": "This is the number of members in a group",
         "placeholders": {
             "number": {
@@ -4768,7 +4894,7 @@
         "description": "This is a button on the conversation details to show all media"
     },
     "ConversationDetailsMembershipList--title": {
-        "message": "$number$ members",
+        "message": "$number$ члена",
         "description": "The title of the membership list panel",
         "placeholders": {
             "number": {
@@ -4790,7 +4916,7 @@
         "description": "Shown in a toast when a user selects to copy group link"
     },
     "GroupLinkManagement--share": {
-        "message": "Copy link",
+        "message": "Копирай линка",
         "description": "This lets users share their group link"
     },
     "GroupLinkManagement--confirm-reset": {
@@ -4810,7 +4936,7 @@
         "description": "Description for the approve new members select area"
     },
     "PendingInvites--tab-requests": {
-        "message": "Requests ($count$)",
+        "message": "Заявки ($count$)",
         "description": "Label for the tab to view pending requests",
         "placeholders": {
             "name": {
@@ -4850,11 +4976,11 @@
         }
     },
     "PendingInvites--invites": {
-        "message": "Invited by you",
+        "message": "Поканени от теб",
         "description": "This is the title list of all invites"
     },
     "PendingInvites--invited-by-you": {
-        "message": "Invited by you",
+        "message": "Поканени от теб",
         "description": "This is the title for the list of members you have invited"
     },
     "PendingInvites--invited-by-others": {
@@ -4922,7 +5048,7 @@
         "description": "This is the modal button to approve group request to join"
     },
     "PendingRequests--deny": {
-        "message": "Deny Request",
+        "message": "Откажи заявката",
         "description": "This is the modal button to deny group request to join"
     },
     "PendingRequests--info": {
@@ -4956,7 +5082,7 @@
         "description": "The button text when you click on an uploaded avatar and want to remove it"
     },
     "ContactPill--remove": {
-        "message": "Remove contact",
+        "message": "Премахни контакт",
         "description": "The label for the 'remove' button on the contact pill"
     },
     "ComposeErrorDialog--close": {
@@ -5036,7 +5162,7 @@
         }
     },
     "AddGroupMembersModal--confirm-button--one": {
-        "message": "Add member",
+        "message": "Добави член",
         "description": "When adding new members to an existing group, this is shown on the confirmation dialog button"
     },
     "AddGroupMembersModal--confirm-button--many": {
@@ -5048,7 +5174,7 @@
         "description": "The text of the button to create new groups"
     },
     "selectContact": {
-        "message": "Select contact",
+        "message": "Избери контакт",
         "description": "The label for contact checkboxes that are non-selected (clicking them should select the contact)"
     },
     "deselectContact": {

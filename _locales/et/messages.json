@@ -1412,7 +1412,7 @@
         "description": "Header for general options on the settings screen"
     },
     "spellCheckDescription": {
-        "message": "Enable spell check",
+        "message": "Luba õigekirja kontroll",
         "description": "Description of the spell check setting"
     },
     "spellCheckWillBeEnabled": {
@@ -1424,7 +1424,7 @@
         "description": "Shown when the user disables spellcheck to indicate that they must restart Signal."
     },
     "autoLaunchDescription": {
-        "message": "Open at computer login",
+        "message": "Käivita arvutisse sisselogimisel",
         "description": "Description for the automatic launch setting"
     },
     "clearDataHeader": {
@@ -1542,7 +1542,7 @@
         "description": "Shown on outgoing message if it fails to send"
     },
     "sendPaused": {
-        "message": "Send paused",
+        "message": "Saatmine peatatud",
         "description": "Shown on outgoing message if it cannot be sent immediately"
     },
     "partiallySent": {
@@ -1866,7 +1866,7 @@
         "description": "Label shown when there are no contacts to compose to"
     },
     "noConversationsFound": {
-        "message": "No conversations found",
+        "message": "Vestlusi ei leitud",
         "description": "Label shown when there are no conversations to compose to"
     },
     "chooseGroupMembers__title": {
@@ -3102,7 +3102,7 @@
         "description": "Shown to indicate this user is not a member of any groups"
     },
     "no-groups-in-common-warning": {
-        "message": "No groups in common. Review requests carefully.",
+        "message": "Ühiseid gruppe pole. Vaata taotlused hoolikalt üle.",
         "description": "When a user has no common groups, show this warning"
     },
     "acceptCall": {
@@ -3308,7 +3308,7 @@
         "description": "Label for muting the conversation"
     },
     "muteEightHours": {
-        "message": "Mute for eight hours",
+        "message": "Vaigista kaheksaks tunniks",
         "description": "Label for muting the conversation"
     },
     "muteDay": {
@@ -3320,7 +3320,7 @@
         "description": "Label for muting the conversation"
     },
     "muteAlways": {
-        "message": "Mute always",
+        "message": "Vaigista alati",
         "description": "Label for muting the conversation"
     },
     "unmute": {
@@ -3328,7 +3328,7 @@
         "description": "Label for unmuting the conversation"
     },
     "muteExpirationLabelAlways": {
-        "message": "Muted always",
+        "message": "Alati vaigistatud",
         "description": "Shown in the mute notifications submenu whenever a conversation has been muted"
     },
     "muteExpirationLabel": {
@@ -5084,7 +5084,7 @@
         "description": "Aria label for audio attachment's playback time slider"
     },
     "emptyInboxMessage": {
-        "message": "Click the $composeIcon$ above and search for your contacts or groups to message.",
+        "message": "Klõpsa üleval $composeIcon$ ja otsi sõnumi saatmiseks kontakte või gruppe..",
         "description": "Shown in the left-pane when the inbox is empty",
         "placeholders": {
             "composeIcon": {
@@ -5094,7 +5094,7 @@
         }
     },
     "composeIcon": {
-        "message": "compose button",
+        "message": "koostamisnupp",
         "description": "Shown in the left-pane when the inbox is empty. Describes the button that composes a new message."
     },
     "ForwardMessageModal--continue": {
@@ -5106,15 +5106,15 @@
         "description": "Shown on the message request warning. Clicking this button will open a dialog with more information"
     },
     "MessageRequestWarning__dialog__details": {
-        "message": "You have no groups in common with this person. Review requests carefully before accepting to avoid unwanted messages.",
+        "message": "Sul ei ole ühiseid gruppe selle isikuga. Vaata taotlused hoolikalt üle enne kinnitamist, et soovimatutest sõnumitest hoiduda.",
         "description": "Shown in the message request warning dialog. Gives more information about message requests"
     },
     "MessageRequestWarning__dialog__learn-even-more": {
-        "message": "About Message Requests",
+        "message": "Teave sõnumitaotluste kohta",
         "description": "Shown in the message request warning dialog. Clicking this button will open a page on Signal's support site"
     },
     "ContactSpoofing__same-name": {
-        "message": "Review requests carefully. Signal found another contact with the same name. $link$",
+        "message": "Kontrolli taotlusi hoolega. Signal leidis teise sama nimega kontakti. $link$",
         "description": "Shown in the timeline warning when you have a message request from someone with the same name as someone else",
         "placeholders": {
             "link": {
@@ -5124,11 +5124,11 @@
         }
     },
     "ContactSpoofing__same-name__link": {
-        "message": "Review request",
+        "message": "Vaata taotlus üle",
         "description": "Shown in the timeline warning when you have a message request from someone with the same name as someone else"
     },
     "ContactSpoofingReviewDialog__title": {
-        "message": "Review request",
+        "message": "Vaata taotlus üle",
         "description": "Title for the contact name spoofing review dialog"
     },
     "ContactSpoofingReviewDialog__description": {
@@ -5144,39 +5144,39 @@
         "description": "Header in the contact spoofing review dialog, shown above the \"safe\" user"
     },
     "CaptchaDialog__title": {
-        "message": "Verify to continue messaging",
+        "message": "Verifitseeri sõnumite saatmise jätmiseks",
         "description": "Header in the captcha dialog"
     },
     "CaptchaDialog__first-paragraph": {
-        "message": "To help prevent spam on Signal, please complete verification.",
+        "message": "Rämpspostituste vältimiseks Signalis täida palun verifitseerimine.",
         "description": "First paragraph in the captcha dialog"
     },
     "CaptchaDialog__second-paragraph": {
-        "message": "After verifying, you can continue messaging. Any paused messages will automatically be sent.",
+        "message": "Pärast verifitseerimist saad sõnumite saatmist jätkata. Kõik peatatud sõnumid saadetakse automaatselt.",
         "description": "First paragraph in the captcha dialog"
     },
     "CaptchaDialog--can-close__title": {
-        "message": "Continue Without Verifying?",
+        "message": "Kas jätkata ilma verifitseerimata?",
         "description": "Header in the captcha dialog that can be closed"
     },
     "CaptchaDialog--can-close__body": {
-        "message": "If you choose to skip verification, you may miss messages from other people and your messages may fail to send.",
+        "message": "Kui otsustad verifitseerimise vahele jätta, siis võid jääda ilma teiste poolt saadetud sõnumitest ja sinu sõnumite saatmine ei pruugi õnnestuda.",
         "description": "Body of the captcha dialog that can be closed"
     },
     "CaptchaDialog--can_close__skip-verification": {
-        "message": "Skip verification",
+        "message": "Jäta verifitseerimine vahele",
         "description": "Skip button of the captcha dialog that can be closed"
     },
     "verificationComplete": {
-        "message": "Verification complete.",
+        "message": "Verifitseerimine lõpetatud.",
         "description": "Displayed after successful captcha"
     },
     "verificationFailed": {
-        "message": "Verification failed. Please retry later.",
+        "message": "Verifitseerimine ei õnnestunud. Palun proovi hiljem uuesti.",
         "description": "Displayed after unsuccessful captcha"
     },
     "deleteForEveryoneFailed": {
-        "message": "Failed to delete message for everyone. Please retry later.",
+        "message": "Sõnumi kustutamine kõigi jaoks ei õnnestunud. Palun proovi hiljem uuesti.",
         "description": "Displayed when delete-for-everyone has failed to send to all recepients"
     }
 }

@@ -16,6 +16,8 @@ import {
   ConversationModelCollectionType,
   MessageModelCollectionType,
   MessageAttributesType,
+  ReactionAttributesType,
+  ReactionModelType,
 } from './model-types.d';
 import { ContactRecordIdentityState, TextSecureType } from './textsecure.d';
 import {
@@ -82,6 +84,10 @@ import { ConversationModel } from './models/conversations';
 import { combineNames } from './util';
 import { BatcherType } from './util/batcher';
 import { AttachmentList } from './components/conversation/AttachmentList';
+import {
+  CallingScreenSharingController,
+  PropsType as CallingScreenSharingControllerProps,
+} from './components/CallingScreenSharingController';
 import { CaptionEditor } from './components/CaptionEditor';
 import { ConfirmationDialog } from './components/ConfirmationDialog';
 import { ContactDetail } from './components/conversation/ContactDetail';
@@ -144,6 +150,13 @@ declare global {
     };
 
     WhatIsThis: WhatIsThis;
+
+    registerScreenShareControllerRenderer: (
+      f: (
+        component: typeof CallingScreenSharingController,
+        props: CallingScreenSharingControllerProps
+      ) => void
+    ) => void;
 
     attachmentDownloadQueue: Array<MessageModel> | undefined;
     startupProcessingQueue: StartupQueue | undefined;
@@ -227,7 +240,6 @@ declare global {
     setAutoHideMenuBar: (value: WhatIsThis) => void;
     setBadgeCount: (count: number) => void;
     setMenuBarVisibility: (value: WhatIsThis) => void;
-    setSecureInput: (enabled: boolean) => void;
     showConfirmationDialog: (options: ConfirmationDialogViewProps) => void;
     showKeyboardShortcuts: () => void;
     storage: {
@@ -726,9 +738,9 @@ export type WhisperType = {
   };
 
   Reactions: {
-    forMessage: (message: unknown) => Array<WhatIsThis>;
-    add: (reaction: unknown) => WhatIsThis;
-    onReaction: (reactionModel: unknown) => unknown;
+    forMessage: (message: unknown) => Array<ReactionModelType>;
+    add: (reaction: ReactionAttributesType) => ReactionModelType;
+    onReaction: (reactionModel: ReactionModelType) => ReactionAttributesType;
   };
 
   Deletes: {

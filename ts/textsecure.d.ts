@@ -60,15 +60,11 @@ export type TextSecureType = {
       setUuidAndDeviceId: (uuid: string, deviceId: number) => Promise<void>;
     };
     unprocessed: {
-      batchAdd: (dataArray: Array<UnprocessedType>) => Promise<void>;
       remove: (id: string | Array<string>) => Promise<void>;
       getCount: () => Promise<number>;
       removeAll: () => Promise<void>;
       getAll: () => Promise<Array<UnprocessedType>>;
       updateAttempts: (id: string, attempts: number) => Promise<void>;
-      addDecryptedDataToList: (
-        array: Array<Partial<UnprocessedType>>
-      ) => Promise<void>;
     };
     get: (key: string, defaultValue?: any) => any;
     put: (key: string, value: any) => Promise<void>;
@@ -577,6 +573,7 @@ export declare class ContentClass {
   nullMessage?: NullMessageClass;
   receiptMessage?: ReceiptMessageClass;
   typingMessage?: TypingMessageClass;
+  senderKeyDistributionMessage?: ByteBufferClass;
 }
 
 export declare class DataMessageClass {
@@ -737,6 +734,7 @@ export declare namespace EnvelopeClass {
     static PREKEY_BUNDLE: number;
     static RECEIPT: number;
     static UNIDENTIFIED_SENDER: number;
+    static SENDERKEY: number;
   }
 }
 
@@ -1068,6 +1066,7 @@ export declare class AccountRecordClass {
   notDiscoverableByPhoneNumber?: boolean;
   pinnedConversations?: PinnedConversationClass[];
   noteToSelfMarkedUnread?: boolean;
+  primarySendsSms?: boolean;
 
   __unknownFields?: ArrayBuffer;
 }
@@ -1351,7 +1350,7 @@ export declare namespace SenderCertificateClass {
     ) => Certificate;
     toArrayBuffer: () => ArrayBuffer;
 
-    sender?: string;
+    senderE164?: string;
     senderUuid?: string;
     senderDevice?: number;
     expires?: ProtoBigNumberType;
@@ -1383,6 +1382,8 @@ export declare namespace UnidentifiedSenderMessageClass {
     type?: number;
     senderCertificate?: SenderCertificateClass;
     content?: ProtoBinaryType;
+    contentHint?: number;
+    groupId?: ProtoBinaryType;
   }
 }
 
@@ -1390,5 +1391,11 @@ export declare namespace UnidentifiedSenderMessageClass.Message {
   class Type {
     static PREKEY_MESSAGE: number;
     static MESSAGE: number;
+    static SENDERKEY_MESSAGE: number;
+  }
+
+  class ContentHint {
+    static SUPPLEMENTARY: number;
+    static RETRY: number;
   }
 }

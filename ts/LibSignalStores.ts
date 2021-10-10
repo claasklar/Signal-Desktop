@@ -8,20 +8,25 @@ import { isNumber } from 'lodash';
 
 import {
   Direction,
-  ProtocolAddress,
-  SessionStore,
-  SessionRecord,
   IdentityKeyStore,
   PreKeyRecord,
   PreKeyStore,
   PrivateKey,
+  ProtocolAddress,
   PublicKey,
-  SignedPreKeyStore,
+  SenderKeyRecord,
+  SenderKeyStore,
+  SessionRecord,
+  SessionStore,
   SignedPreKeyRecord,
-} from 'libsignal-client';
+  SignedPreKeyStore,
+  Uuid,
+} from '@signalapp/signal-client';
 import { freezePreKey, freezeSignedPreKey } from './SignalProtocolStore';
 
 import { typedArrayToArrayBuffer } from './Crypto';
+
+import { Zone } from './util/Zone';
 
 function encodedNameFromAddress(address: ProtocolAddress): string {
   const name = address.name();
@@ -30,28 +35,52 @@ function encodedNameFromAddress(address: ProtocolAddress): string {
   return encodedName;
 }
 
+export type SessionsOptions = {
+  readonly zone?: Zone;
+};
+
 export class Sessions extends SessionStore {
+  private readonly zone: Zone | undefined;
+
+  constructor(options: SessionsOptions = {}) {
+    super();
+    this.zone = options.zone;
+  }
+
   async saveSession(
     address: ProtocolAddress,
     record: SessionRecord
   ): Promise<void> {
     await window.textsecure.storage.protocol.storeSession(
       encodedNameFromAddress(address),
-      record
+      record,
+      { zone: this.zone }
     );
   }
 
   async getSession(name: ProtocolAddress): Promise<SessionRecord | null> {
     const encodedName = encodedNameFromAddress(name);
     const record = await window.textsecure.storage.protocol.loadSession(
-      encodedName
+      encodedName,
+      { zone: this.zone }
     );
 
     return record || null;
   }
 }
 
+export type IdentityKeysOptions = {
+  readonly zone?: Zone;
+};
+
 export class IdentityKeys extends IdentityKeyStore {
+  private readonly zone: Zone | undefined;
+
+  constructor({ zone }: IdentityKeysOptions = {}) {
+    super();
+    this.zone = zone;
+  }
+
   async getIdentityKey(): Promise<PrivateKey> {
     const keyPair = await window.textsecure.storage.protocol.getIdentityKeyPair();
     if (!keyPair) {
@@ -86,9 +115,14 @@ export class IdentityKeys extends IdentityKeyStore {
   async saveIdentity(name: ProtocolAddress, key: PublicKey): Promise<boolean> {
     const encodedName = encodedNameFromAddress(name);
     const publicKey = typedArrayToArrayBuffer(key.serialize());
+
+    // Pass `zone` to let `saveIdentity` archive sibling sessions when identity
+    // key changes.
     return window.textsecure.storage.protocol.saveIdentity(
       encodedName,
-      publicKey
+      publicKey,
+      false,
+      { zone: this.zone }
     );
   }
 
@@ -128,6 +162,36 @@ export class PreKeys extends PreKeyStore {
 
   async removePreKey(id: number): Promise<void> {
     await window.textsecure.storage.protocol.removePreKey(id);
+  }
+}
+
+export class SenderKeys extends SenderKeyStore {
+  async saveSenderKey(
+    sender: ProtocolAddress,
+    distributionId: Uuid,
+    record: SenderKeyRecord
+  ): Promise<void> {
+    const encodedAddress = encodedNameFromAddress(sender);
+
+    await window.textsecure.storage.protocol.saveSenderKey(
+      encodedAddress,
+      distributionId,
+      record
+    );
+  }
+
+  async getSenderKey(
+    sender: ProtocolAddress,
+    distributionId: Uuid
+  ): Promise<SenderKeyRecord | null> {
+    const encodedAddress = encodedNameFromAddress(sender);
+
+    const senderKey = await window.textsecure.storage.protocol.getSenderKey(
+      encodedAddress,
+      distributionId
+    );
+
+    return senderKey || null;
   }
 }
 
