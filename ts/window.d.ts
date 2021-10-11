@@ -36,7 +36,6 @@ import { getEnvironment } from './environment';
 import * as zkgroup from './util/zkgroup';
 import { LocalizerType, BodyRangesType, BodyRangeType } from './types/Util';
 import * as Attachment from './types/Attachment';
-import { ColorType } from './types/Colors';
 import * as MIME from './types/MIME';
 import * as Contact from './types/Contact';
 import * as Errors from '../js/modules/types/errors';
@@ -44,11 +43,13 @@ import { ConversationController } from './ConversationController';
 import { ReduxActions } from './state/types';
 import { createStore } from './state/createStore';
 import { createCallManager } from './state/roots/createCallManager';
+import { createChatColorPicker } from './state/roots/createChatColorPicker';
 import { createCompositionArea } from './state/roots/createCompositionArea';
 import { createContactModal } from './state/roots/createContactModal';
 import { createConversationDetails } from './state/roots/createConversationDetails';
 import { createConversationHeader } from './state/roots/createConversationHeader';
 import { createForwardMessageModal } from './state/roots/createForwardMessageModal';
+import { createGlobalModalContainer } from './state/roots/createGlobalModalContainer';
 import { createGroupLinkManagement } from './state/roots/createGroupLinkManagement';
 import { createGroupV1MigrationModal } from './state/roots/createGroupV1MigrationModal';
 import { createGroupV2JoinModal } from './state/roots/createGroupV2JoinModal';
@@ -89,6 +90,7 @@ import {
   PropsType as CallingScreenSharingControllerProps,
 } from './components/CallingScreenSharingController';
 import { CaptionEditor } from './components/CaptionEditor';
+import { ChatColorPicker } from './components/ChatColorPicker';
 import { ConfirmationDialog } from './components/ConfirmationDialog';
 import { ContactDetail } from './components/conversation/ContactDetail';
 import { ContactModal } from './components/conversation/ContactModal';
@@ -100,6 +102,7 @@ import { MessageDetail } from './components/conversation/MessageDetail';
 import { ProgressModal } from './components/ProgressModal';
 import { Quote } from './components/conversation/Quote';
 import { StagedLinkPreview } from './components/conversation/StagedLinkPreview';
+import { DisappearingTimeDialog } from './components/conversation/DisappearingTimeDialog';
 import { MIMEType } from './types/MIME';
 import { ElectronLocaleType } from './util/mapToSupportLocale';
 import { SignalProtocolStore } from './SignalProtocolStore';
@@ -314,6 +317,7 @@ declare global {
         ) => void;
         onTimeout: (timestamp: number, cb: () => void, id?: string) => string;
         removeTimeout: (uuid: string) => void;
+        retryPlaceholders?: Util.RetryPlaceholders;
         runStorageServiceSyncJob: () => Promise<void>;
         storageServiceUploadJob: () => void;
       };
@@ -474,6 +478,7 @@ declare global {
       Components: {
         AttachmentList: typeof AttachmentList;
         CaptionEditor: typeof CaptionEditor;
+        ChatColorPicker: typeof ChatColorPicker;
         ConfirmationDialog: typeof ConfirmationDialog;
         ContactDetail: typeof ContactDetail;
         ContactModal: typeof ContactModal;
@@ -485,6 +490,7 @@ declare global {
         ProgressModal: typeof ProgressModal;
         Quote: typeof Quote;
         StagedLinkPreview: typeof StagedLinkPreview;
+        DisappearingTimeDialog: typeof DisappearingTimeDialog;
       };
       OS: typeof OS;
       Workflow: {
@@ -501,11 +507,13 @@ declare global {
         createStore: typeof createStore;
         Roots: {
           createCallManager: typeof createCallManager;
+          createChatColorPicker: typeof createChatColorPicker;
           createCompositionArea: typeof createCompositionArea;
           createContactModal: typeof createContactModal;
           createConversationDetails: typeof createConversationDetails;
           createConversationHeader: typeof createConversationHeader;
           createForwardMessageModal: typeof createForwardMessageModal;
+          createGlobalModalContainer: typeof createGlobalModalContainer;
           createGroupLinkManagement: typeof createGroupLinkManagement;
           createGroupV1MigrationModal: typeof createGroupV1MigrationModal;
           createGroupV2JoinModal: typeof createGroupV2JoinModal;
@@ -792,4 +800,5 @@ export type WhisperType = {
   View: typeof Backbone.View & {
     Templates: Record<string, string>;
   };
+  DisappearingTimeDialog: typeof window.Whisper.View | undefined;
 };

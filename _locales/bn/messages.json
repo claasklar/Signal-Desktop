@@ -5290,15 +5290,15 @@
         "description": "Body of the captcha dialog that can be closed"
     },
     "CaptchaDialog--can_close__skip-verification": {
-        "message": "Skip verification",
+        "message": "যাচাইকরণ উপেক্ষা করো",
         "description": "Skip button of the captcha dialog that can be closed"
     },
     "verificationComplete": {
-        "message": "Verification complete.",
+        "message": "যাচাইকরণ সম্পন্ন।",
         "description": "Displayed after successful captcha"
     },
     "verificationFailed": {
-        "message": "Verification failed. Please retry later.",
+        "message": "যাচাইকরণ ব্যর্থ। পরে আরার চেষ্টা করো।",
         "description": "Displayed after unsuccessful captcha"
     },
     "deleteForEveryoneFailed": {

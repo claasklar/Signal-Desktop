@@ -26,6 +26,7 @@ import { pki } from 'node-forge';
 import is from '@sindresorhus/is';
 import PQueue from 'p-queue';
 import { v4 as getGuid } from 'uuid';
+import { z } from 'zod';
 
 import { Long } from '../window.d';
 import { getUserAgent } from '../util/getUserAgent';
@@ -350,6 +351,49 @@ type ArrayBufferWithDetailsType = {
   contentType: string | null;
   response: Response;
 };
+
+export const multiRecipient200ResponseSchema = z
+  .object({
+    uuids404: z.array(z.string()).optional(),
+    needsSync: z.boolean().optional(),
+  })
+  .passthrough();
+export type MultiRecipient200ResponseType = z.infer<
+  typeof multiRecipient200ResponseSchema
+>;
+
+export const multiRecipient409ResponseSchema = z.array(
+  z
+    .object({
+      uuid: z.string(),
+      devices: z
+        .object({
+          missingDevices: z.array(z.number()).optional(),
+          extraDevices: z.array(z.number()).optional(),
+        })
+        .passthrough(),
+    })
+    .passthrough()
+);
+export type MultiRecipient409ResponseType = z.infer<
+  typeof multiRecipient409ResponseSchema
+>;
+
+export const multiRecipient410ResponseSchema = z.array(
+  z
+    .object({
+      uuid: z.string(),
+      devices: z
+        .object({
+          staleDevices: z.array(z.number()).optional(),
+        })
+        .passthrough(),
+    })
+    .passthrough()
+);
+export type MultiRecipient410ResponseType = z.infer<
+  typeof multiRecipient410ResponseSchema
+>;
 
 function isSuccess(status: number): boolean {
   return status >= 0 && status < 400;
@@ -685,11 +729,13 @@ const URL_CALLS = {
   groupToken: 'v1/groups/token',
   keys: 'v2/keys',
   messages: 'v1/messages',
+  multiRecipient: 'v1/messages/multi_recipient',
   newDeviceVerificationCode: 'v1/devices/provisioning/code',
   profile: 'v1/profile',
   provisioningLink: 'v1/provisioning',
   registerCapabilities: 'v1/devices/capabilities',
   removeSignalingKey: 'v1/accounts/signaling_key',
+  reportMessage: 'v1/messages/report',
   signed: 'v2/keys/signed',
   storageManifest: 'v1/storage/manifest',
   storageModify: 'v1/storage/',
@@ -730,6 +776,7 @@ type AjaxOptionsType = {
   call: keyof typeof URL_CALLS;
   contentType?: string;
   data?: ArrayBuffer | Buffer | string;
+  headers?: HeaderListType;
   host?: string;
   httpType: HTTPCodeType;
   jsonData?: any;
@@ -751,10 +798,12 @@ export type WebAPIConnectType = {
 export type CapabilitiesType = {
   gv2: boolean;
   'gv1-migration': boolean;
+  senderKey: boolean;
 };
 export type CapabilitiesUploadType = {
   'gv2-3': boolean;
   'gv1-migration': boolean;
+  senderKey: boolean;
 };
 
 type StickerPackManifestType = any;
@@ -895,6 +944,7 @@ export type WebAPIType = {
   registerSupportForUnauthenticatedDelivery: () => Promise<any>;
   removeDevice: (id: string) => Promise<void>;
   removeSignalingKey: () => Promise<void>;
+  reportMessage: (senderE164: string, serverGuid: string) => Promise<void>;
   requestVerificationSMS: (
     number: string,
     captchaToken?: string
@@ -907,17 +957,21 @@ export type WebAPIType = {
     destination: string,
     messageArray: Array<MessageType>,
     timestamp: number,
-    silent?: boolean,
     online?: boolean
   ) => Promise<void>;
   sendMessagesUnauth: (
     destination: string,
     messageArray: Array<MessageType>,
     timestamp: number,
-    silent?: boolean,
     online?: boolean,
     options?: { accessKey?: string }
   ) => Promise<void>;
+  sendWithSenderKey: (
+    payload: ArrayBuffer,
+    accessKeys: ArrayBuffer,
+    timestamp: number,
+    online?: boolean
+  ) => Promise<MultiRecipient200ResponseType>;
   setSignedPreKey: (signedPreKey: SignedPreKeyType) => Promise<void>;
   updateDeviceName: (deviceName: string) => Promise<void>;
   uploadGroupAvatar: (
@@ -1088,10 +1142,12 @@ export function initialize({
       registerSupportForUnauthenticatedDelivery,
       removeDevice,
       removeSignalingKey,
+      reportMessage,
       requestVerificationSMS,
       requestVerificationVoice,
       sendMessages,
       sendMessagesUnauth,
+      sendWithSenderKey,
       setSignedPreKey,
       updateDeviceName,
       uploadGroupAvatar,
@@ -1110,6 +1166,7 @@ export function initialize({
         certificateAuthority,
         contentType: param.contentType || 'application/json; charset=utf-8',
         data: param.data || (param.jsonData && _jsonThing(param.jsonData)),
+        headers: param.headers,
         host: param.host || url,
         password: param.password || password,
         path: URL_CALLS[param.call] + param.urlParameters,
@@ -1386,6 +1443,18 @@ export function initialize({
       });
     }
 
+    async function reportMessage(
+      senderE164: string,
+      serverGuid: string
+    ): Promise<void> {
+      await _ajax({
+        call: 'reportMessage',
+        httpType: 'POST',
+        urlParameters: `/${senderE164}/${serverGuid}`,
+        responseType: 'arraybuffer',
+      });
+    }
+
     async function requestVerificationSMS(
       number: string,
       captchaToken?: string
@@ -1427,6 +1496,7 @@ export function initialize({
       const capabilities: CapabilitiesUploadType = {
         'gv2-3': true,
         'gv1-migration': true,
+        senderKey: false,
       };
 
       const { accessKey } = options;
@@ -1666,15 +1736,11 @@ export function initialize({
       destination: string,
       messageArray: Array<MessageType>,
       timestamp: number,
-      silent?: boolean,
       online?: boolean,
       { accessKey }: { accessKey?: string } = {}
     ) {
       const jsonData: any = { messages: messageArray, timestamp };
 
-      if (silent) {
-        jsonData.silent = true;
-      }
       if (online) {
         jsonData.online = true;
       }
@@ -1694,14 +1760,10 @@ export function initialize({
       destination: string,
       messageArray: Array<MessageType>,
       timestamp: number,
-      silent?: boolean,
       online?: boolean
     ) {
       const jsonData: any = { messages: messageArray, timestamp };
 
-      if (silent) {
-        jsonData.silent = true;
-      }
       if (online) {
         jsonData.online = true;
       }
@@ -1712,6 +1774,25 @@ export function initialize({
         urlParameters: `/${destination}`,
         jsonData,
         responseType: 'json',
+      });
+    }
+
+    async function sendWithSenderKey(
+      data: ArrayBuffer,
+      accessKeys: ArrayBuffer,
+      timestamp: number,
+      online?: boolean
+    ): Promise<MultiRecipient200ResponseType> {
+      return _ajax({
+        call: 'multiRecipient',
+        httpType: 'PUT',
+        contentType: 'application/vnd.signal-messenger.mrm',
+        data,
+        urlParameters: `?ts=${timestamp}&online=${online ? 'true' : 'false'}`,
+        responseType: 'json',
+        headers: {
+          'Unidentified-Access-Key': arrayBufferToBase64(accessKeys),
+        },
       });
     }
 

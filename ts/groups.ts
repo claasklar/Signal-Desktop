@@ -47,6 +47,7 @@ import {
   getClientZkGroupCipher,
   getClientZkProfileOperations,
 } from './util/zkgroup';
+import * as universalExpireTimer from './util/universalExpireTimer';
 import {
   arrayBufferToBase64,
   arrayBufferToHex,
@@ -177,6 +178,12 @@ export type GroupV2AdminApprovalRemoveOneChangeType = {
   conversationId: string;
   inviter?: string;
 };
+export type GroupV2DescriptionChangeType = {
+  type: 'description';
+  removed?: boolean;
+  // Adding this field; cannot remove previous field for backwards compatibility
+  description?: string;
+};
 
 export type GroupV2ChangeDetailType =
   | GroupV2AccessAttributesChangeType
@@ -186,9 +193,10 @@ export type GroupV2ChangeDetailType =
   | GroupV2AdminApprovalAddOneChangeType
   | GroupV2AdminApprovalRemoveOneChangeType
   | GroupV2AvatarChangeType
+  | GroupV2DescriptionChangeType
   | GroupV2GroupLinkAddChangeType
-  | GroupV2GroupLinkResetChangeType
   | GroupV2GroupLinkRemoveChangeType
+  | GroupV2GroupLinkResetChangeType
   | GroupV2MemberAddChangeType
   | GroupV2MemberAddFromAdminApprovalChangeType
   | GroupV2MemberAddFromInviteChangeType
@@ -250,12 +258,13 @@ type UploadedAvatarType = {
 
 export const MASTER_KEY_LENGTH = 32;
 const GROUP_TITLE_MAX_ENCRYPTED_BYTES = 1024;
+const GROUP_DESC_MAX_ENCRYPTED_BYTES = 8192;
 export const ID_V1_LENGTH = 16;
 export const ID_LENGTH = 32;
 const TEMPORAL_AUTH_REJECTED_CODE = 401;
 const GROUP_ACCESS_DENIED_CODE = 403;
 const GROUP_NONEXISTENT_CODE = 404;
-const SUPPORTED_CHANGE_EPOCH = 1;
+const SUPPORTED_CHANGE_EPOCH = 2;
 export const LINK_VERSION_ERROR = 'LINK_VERSION_ERROR';
 const GROUP_INVITE_LINK_PASSWORD_LENGTH = 16;
 
@@ -409,6 +418,25 @@ function buildGroupTitleBuffer(
 
   if (result.byteLength > GROUP_TITLE_MAX_ENCRYPTED_BYTES) {
     throw new Error('buildGroupTitleBuffer: encrypted group title is too long');
+  }
+
+  return result;
+}
+
+function buildGroupDescriptionBuffer(
+  clientZkGroupCipher: ClientZkGroupCipher,
+  description: string
+): ArrayBuffer {
+  const attrsBlob = new window.textsecure.protobuf.GroupAttributeBlob();
+  attrsBlob.descriptionText = description;
+  const attrsBlobPlaintext = attrsBlob.toArrayBuffer();
+
+  const result = encryptGroupBlob(clientZkGroupCipher, attrsBlobPlaintext);
+
+  if (result.byteLength > GROUP_DESC_MAX_ENCRYPTED_BYTES) {
+    throw new Error(
+      'buildGroupDescriptionBuffer: encrypted group title is too long'
+    );
   }
 
   return result;
@@ -715,6 +743,7 @@ export async function buildUpdateAttributesChange(
   >,
   attributes: Readonly<{
     avatar?: undefined | ArrayBuffer;
+    description?: string;
     title?: string;
   }>
 ): Promise<undefined | GroupChangeClass.Actions> {
@@ -770,6 +799,17 @@ export async function buildUpdateAttributesChange(
     actions.modifyTitle.title = buildGroupTitleBuffer(
       clientZkGroupCipher,
       title
+    );
+  }
+
+  const { description } = attributes;
+  if (typeof description === 'string') {
+    hasChangedSomething = true;
+
+    actions.modifyDescription = new window.textsecure.protobuf.GroupChange.Actions.ModifyDescriptionAction();
+    actions.modifyDescription.descriptionBytes = buildGroupDescriptionBuffer(
+      clientZkGroupCipher,
+      description
     );
   }
 
@@ -1259,9 +1299,12 @@ export async function modifyGroupV2({
 
         const sendOptions = await conversation.getSendOptions();
         const timestamp = Date.now();
+        const {
+          ContentHint,
+        } = window.textsecure.protobuf.UnidentifiedSenderMessage.Message;
 
         const promise = conversation.wrapSend(
-          window.textsecure.messaging.sendMessageToGroup(
+          window.Signal.Util.sendToGroup(
             {
               groupV2: conversation.getGroupV2Info({
                 groupChange: groupChangeBuffer,
@@ -1271,6 +1314,8 @@ export async function modifyGroupV2({
               timestamp,
               profileKey,
             },
+            conversation,
+            ContentHint.SUPPLEMENTARY,
             sendOptions
           )
         );
@@ -1628,16 +1673,25 @@ export async function createGroupV2({
   const groupV2Info = conversation.getGroupV2Info({
     includePendingMembers: true,
   });
+  const {
+    ContentHint,
+  } = window.textsecure.protobuf.UnidentifiedSenderMessage.Message;
+  const sendOptions = await conversation.getSendOptions();
 
   await wrapWithSyncMessageSend({
     conversation,
-    logId: `sendMessageToGroup/${logId}`,
-    send: async sender =>
-      sender.sendMessageToGroup({
-        groupV2: groupV2Info,
-        timestamp,
-        profileKey,
-      }),
+    logId: `sendToGroup/${logId}`,
+    send: async () =>
+      window.Signal.Util.sendToGroup(
+        {
+          groupV2: groupV2Info,
+          timestamp,
+          profileKey,
+        },
+        conversation,
+        ContentHint.SUPPLEMENTARY,
+        sendOptions
+      ),
     timestamp,
   });
 
@@ -1660,6 +1714,11 @@ export async function createGroupV2({
   const model = new window.Whisper.Message(createdTheGroupMessage);
   window.MessageController.register(model.id, model);
   conversation.trigger('newmessage', model);
+
+  const expireTimer = universalExpireTimer.get();
+  if (expireTimer) {
+    await conversation.updateExpirationTimer(expireTimer);
+  }
 
   return conversation;
 }
@@ -2141,18 +2200,28 @@ export async function initiateMigrationToGroupV2(
     | ArrayBuffer
     | undefined = await ourProfileKeyService.get();
 
+  const {
+    ContentHint,
+  } = window.textsecure.protobuf.UnidentifiedSenderMessage.Message;
+  const sendOptions = await conversation.getSendOptions();
+
   await wrapWithSyncMessageSend({
     conversation,
-    logId: `sendMessageToGroup/${logId}`,
-    send: async sender =>
+    logId: `sendToGroup/${logId}`,
+    send: async () =>
       // Minimal message to notify group members about migration
-      sender.sendMessageToGroup({
-        groupV2: conversation.getGroupV2Info({
-          includePendingMembers: true,
-        }),
-        timestamp,
-        profileKey: ourProfileKey,
-      }),
+      window.Signal.Util.sendToGroup(
+        {
+          groupV2: conversation.getGroupV2Info({
+            includePendingMembers: true,
+          }),
+          timestamp,
+          profileKey: ourProfileKey,
+        },
+        conversation,
+        ContentHint.SUPPLEMENTARY,
+        sendOptions
+      ),
     timestamp,
   });
 }
@@ -3582,6 +3651,15 @@ function extractDiffs({
     });
   }
 
+  // description
+  if (old.description !== current.description) {
+    details.push({
+      type: 'description',
+      removed: !current.description,
+      description: current.description,
+    });
+  }
+
   // No disappearing message timer check here - see below
 
   // membersV2
@@ -4366,6 +4444,19 @@ async function applyGroupChange({
     }
   }
 
+  // modifyDescription?: GroupChangeClass.Actions.ModifyDescriptionAction;
+  if (actions.modifyDescription) {
+    const { descriptionBytes } = actions.modifyDescription;
+    if (descriptionBytes && descriptionBytes.content === 'descriptionText') {
+      result.description = descriptionBytes.descriptionText;
+    } else {
+      window.log.warn(
+        `applyGroupChange/${logId}: Clearing group description due to missing data.`
+      );
+      result.description = undefined;
+    }
+  }
+
   if (ourConversationId) {
     result.left = !members[ourConversationId];
   }
@@ -4637,6 +4728,14 @@ async function applyGroupState({
     result.groupInviteLinkPassword = inviteLinkPassword;
   } else {
     result.groupInviteLinkPassword = undefined;
+  }
+
+  // descriptionBytes
+  const { descriptionBytes } = groupState;
+  if (descriptionBytes && descriptionBytes.content === 'descriptionText') {
+    result.description = descriptionBytes.descriptionText;
+  } else {
+    result.description = undefined;
   }
 
   return {
@@ -5189,6 +5288,29 @@ function decryptGroupChange(
     actions.modifyInviteLinkPassword = undefined;
   }
 
+  // modifyDescription?: GroupChangeClass.Actions.ModifyDescriptionAction;
+  if (
+    actions.modifyDescription &&
+    !isByteBufferEmpty(actions.modifyDescription.descriptionBytes)
+  ) {
+    try {
+      actions.modifyDescription.descriptionBytes = window.textsecure.protobuf.GroupAttributeBlob.decode(
+        decryptGroupBlob(
+          clientZkGroupCipher,
+          actions.modifyDescription.descriptionBytes.toArrayBuffer()
+        )
+      );
+    } catch (error) {
+      window.log.warn(
+        `decryptGroupChange/${logId}: Unable to decrypt modifyDescription.descriptionBytes`,
+        error && error.stack ? error.stack : error
+      );
+      actions.modifyDescription.descriptionBytes = undefined;
+    }
+  } else if (actions.modifyDescription) {
+    actions.modifyDescription.descriptionBytes = undefined;
+  }
+
   return actions;
 }
 
@@ -5205,6 +5327,26 @@ export function decryptGroupTitle(
     if (blob && blob.content === 'title') {
       return blob.title;
     }
+  }
+
+  return undefined;
+}
+
+export function decryptGroupDescription(
+  description: ProtoBinaryType,
+  secretParams: string
+): string | undefined {
+  const clientZkGroupCipher = getClientZkGroupCipher(secretParams);
+  if (isByteBufferEmpty(description)) {
+    return undefined;
+  }
+
+  const blob = window.textsecure.protobuf.GroupAttributeBlob.decode(
+    decryptGroupBlob(clientZkGroupCipher, description.toArrayBuffer())
+  );
+
+  if (blob && blob.content === 'descriptionText') {
+    return blob.descriptionText;
   }
 
   return undefined;
@@ -5317,6 +5459,26 @@ function decryptGroupState(
     );
   } else {
     groupState.inviteLinkPassword = undefined;
+  }
+
+  // descriptionBytes
+  if (!isByteBufferEmpty(groupState.descriptionBytes)) {
+    try {
+      groupState.descriptionBytes = window.textsecure.protobuf.GroupAttributeBlob.decode(
+        decryptGroupBlob(
+          clientZkGroupCipher,
+          groupState.descriptionBytes.toArrayBuffer()
+        )
+      );
+    } catch (error) {
+      window.log.warn(
+        `decryptGroupState/${logId}: Unable to decrypt descriptionBytes. Clearing it.`,
+        error && error.stack ? error.stack : error
+      );
+      groupState.descriptionBytes = undefined;
+    }
+  } else {
+    groupState.descriptionBytes = undefined;
   }
 
   return groupState;

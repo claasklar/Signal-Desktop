@@ -29,7 +29,7 @@ import {
 import { CallbackResultType } from '../textsecure/SendMessage';
 import * as expirationTimer from '../util/expirationTimer';
 import { missingCaseError } from '../util/missingCaseError';
-import { ColorType } from '../types/Colors';
+import { ConversationColors } from '../types/Colors';
 import { CallMode } from '../types/Calling';
 import { BodyRangesType } from '../types/Util';
 import { ReactionType } from '../types/Reactions';
@@ -41,6 +41,7 @@ import {
 import { PropsData as SafetyNumberNotificationProps } from '../components/conversation/SafetyNumberNotification';
 import { PropsData as VerificationNotificationProps } from '../components/conversation/VerificationNotification';
 import { PropsDataType as GroupV1MigrationPropsType } from '../components/conversation/GroupV1Migration';
+import { PropsDataType as DeliveryIssuePropsType } from '../components/conversation/DeliveryIssueNotification';
 import {
   PropsData as GroupNotificationProps,
   ChangeType,
@@ -129,8 +130,16 @@ type MessageBubbleProps =
       data: ProfileChangeNotificationPropsType;
     }
   | {
+      type: 'universalTimerNotification';
+      data: null;
+    }
+  | {
       type: 'chatSessionRefreshed';
       data: null;
+    }
+  | {
+      type: 'deliveryIssue';
+      data: DeliveryIssuePropsType;
     }
   | {
       type: 'message';
@@ -328,6 +337,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       !this.isKeyChange() &&
       !this.isMessageHistoryUnsynced() &&
       !this.isProfileChange() &&
+      !this.isUniversalTimerNotification() &&
       !this.isUnsupportedMessage() &&
       !this.isVerifiedChange()
     );
@@ -401,10 +411,22 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         data: this.getPropsForProfileChange(),
       };
     }
+    if (this.isUniversalTimerNotification()) {
+      return {
+        type: 'universalTimerNotification',
+        data: null,
+      };
+    }
     if (this.isChatSessionRefreshed()) {
       return {
         type: 'chatSessionRefreshed',
         data: null,
+      };
+    }
+    if (this.isDeliveryIssue()) {
+      return {
+        type: 'deliveryIssue',
+        data: this.getPropsForDeliveryIssue(),
       };
     }
 
@@ -581,8 +603,16 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     return this.get('type') === 'chat-session-refreshed';
   }
 
+  isDeliveryIssue(): boolean {
+    return this.get('type') === 'delivery-issue';
+  }
+
   isProfileChange(): boolean {
     return this.get('type') === 'profile-change';
+  }
+
+  isUniversalTimerNotification(): boolean {
+    return this.get('type') === 'universal-timer-notification';
   }
 
   // Props for each message type
@@ -613,7 +643,12 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       throw new Error('change is undefined');
     }
 
+    const conversation = this.getConversation();
+
     return {
+      groupName: conversation?.isGroupV2()
+        ? conversation.get('name')
+        : undefined,
       AccessControlEnum: protobuf.AccessControl.AccessRequired,
       RoleEnum: protobuf.Member.Role,
       ourConversationId,
@@ -874,6 +909,20 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     }
   }
 
+  getPropsForDeliveryIssue(): DeliveryIssuePropsType {
+    const sourceUuid = this.get('sourceUuid');
+    const sender = sourceUuid
+      ? window.ConversationController.getOrCreate(
+          sourceUuid,
+          'private'
+        ).format()
+      : PLACEHOLDER_CONTACT;
+
+    return {
+      sender,
+    };
+  }
+
   getPropsForProfileChange(): ProfileChangeNotificationPropsType {
     const change = this.get('profileChange');
     const changedId = this.get('changedId');
@@ -953,11 +1002,18 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       ) || {}
     ).emoji;
 
+    const { customColor = undefined } = conversation
+      ? conversation.getCustomColorData()
+      : {};
+
     return {
       author: contact,
       text: this.createNonBreakingLastSeparator(this.get('body')),
       textPending: this.get('bodyPending'),
       id: this.id,
+      conversationColor:
+        conversation?.getConversationColor() ?? ConversationColors[0],
+      customColor,
       conversationId: this.get('conversationId'),
       isSticker: Boolean(sticker),
       direction: this.isIncoming() ? 'incoming' : 'outgoing',
@@ -1252,7 +1308,6 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       }
     }
 
-    let authorColor: ColorType;
     let authorId: string;
     let authorName: undefined | string;
     let authorPhoneNumber: undefined | string;
@@ -1263,7 +1318,6 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     if (contact && contact.isPrivate()) {
       const contactPhoneNumber = contact.get('e164');
 
-      authorColor = contact.getColor();
       authorId = contact.id;
       authorName = contact.get('name');
       authorPhoneNumber = contactPhoneNumber
@@ -1279,7 +1333,6 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         'getPropsForQuote: contact was missing. This may indicate a bookkeeping error or bad data from another client. Returning a placeholder contact.'
       );
 
-      authorColor = 'grey';
       authorId = 'placeholder-contact';
       authorTitle = window.i18n('unknownContact');
       isFromMe = false;
@@ -1287,14 +1340,21 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
 
     const firstAttachment = quote.attachments && quote.attachments[0];
 
+    const conversation = this.getConversation();
+    const { customColor = undefined } = conversation
+      ? conversation.getCustomColorData()
+      : {};
+
     return {
-      authorColor,
       authorId,
       authorName,
       authorPhoneNumber,
       authorProfileName,
       authorTitle,
       bodyRanges: this.processBodyRanges(bodyRanges),
+      conversationColor:
+        conversation?.getConversationColor() ?? ConversationColors[0],
+      customColor,
       isFromMe,
       rawAttachment: firstAttachment
         ? this.processQuoteAttachment(firstAttachment)
@@ -1354,6 +1414,13 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
   }
 
   getNotificationData(): { emoji?: string; text: string } {
+    if (this.isDeliveryIssue()) {
+      return {
+        emoji: '⚠️',
+        text: window.i18n('DeliveryIssue--preview'),
+      };
+    }
+
     if (this.isChatSessionRefreshed()) {
       return {
         emoji: '🔁',
@@ -1888,6 +1955,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     // Rendered sync messages
     const isCallHistory = this.isCallHistory();
     const isChatSessionRefreshed = this.isChatSessionRefreshed();
+    const isDeliveryIssue = this.isDeliveryIssue();
     const isGroupUpdate = this.isGroupUpdate();
     const isGroupV2Change = this.isGroupV2Change();
     const isEndSession = this.isEndSession();
@@ -1905,6 +1973,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     const isKeyChange = this.isKeyChange();
     const isMessageHistoryUnsynced = this.isMessageHistoryUnsynced();
     const isProfileChange = this.isProfileChange();
+    const isUniversalTimerNotification = this.isUniversalTimerNotification();
 
     // Note: not all of these message types go through message.handleDataMessage
 
@@ -1917,6 +1986,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       // Rendered sync messages
       isCallHistory ||
       isChatSessionRefreshed ||
+      isDeliveryIssue ||
       isGroupUpdate ||
       isGroupV2Change ||
       isEndSession ||
@@ -1930,7 +2000,8 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       // Locally-generated notifications
       isKeyChange ||
       isMessageHistoryUnsynced ||
-      isProfileChange;
+      isProfileChange ||
+      isUniversalTimerNotification;
 
     return !hasSomethingToDisplay;
   }
@@ -2190,27 +2261,30 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       recipients.length === 1 &&
       (recipients[0] === this.OUR_NUMBER || recipients[0] === this.OUR_UUID)
     ) {
-      const [identifier] = recipients;
-      const dataMessage = await window.textsecure.messaging.getMessageProto(
-        identifier,
-        body,
+      const dataMessage = await window.textsecure.messaging.getDataMessage({
         attachments,
-        quoteWithData,
-        previewWithData,
-        stickerWithData,
-        null,
-        this.get('deletedForEveryoneTimestamp'),
-        this.get('sent_at'),
-        this.get('expireTimer'),
+        body,
+        deletedForEveryoneTimestamp: this.get('deletedForEveryoneTimestamp'),
+        expireTimer: this.get('expireTimer'),
+        // flags
+        mentions: this.get('bodyRanges'),
+        preview: previewWithData,
         profileKey,
-        undefined, // flags
-        this.get('bodyRanges')
-      );
+        quote: quoteWithData,
+        reaction: null,
+        recipients,
+        sticker: stickerWithData,
+        timestamp: this.get('sent_at'),
+      });
       return this.sendSyncMessageOnly(dataMessage);
     }
 
     let promise;
     const options = await conversation.getSendOptions();
+
+    const {
+      ContentHint,
+    } = window.textsecure.protobuf.UnidentifiedSenderMessage.Message;
 
     if (conversation.isPrivate()) {
       const [identifier] = recipients;
@@ -2225,19 +2299,38 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         this.get('deletedForEveryoneTimestamp'),
         this.get('sent_at'),
         this.get('expireTimer'),
+        ContentHint.RESENDABLE,
+        undefined, // groupId
         profileKey,
         options
       );
     } else {
-      // Because this is a partial group send, we manually construct the request like
-      //   sendMessageToGroup does.
+      const initialGroupV2 = conversation.getGroupV2Info();
+      const groupId = conversation.get('groupId');
+      if (!groupId) {
+        throw new Error("retrySend: Conversation didn't have groupId");
+      }
 
-      const groupV2 = conversation.getGroupV2Info();
+      const groupV2 = initialGroupV2
+        ? {
+            ...initialGroupV2,
+            members: recipients,
+          }
+        : undefined;
+      const groupV1 = groupV2
+        ? undefined
+        : {
+            id: groupId,
+            members: recipients,
+          };
 
-      promise = window.textsecure.messaging.sendMessage(
+      // Important to ensure that we don't consider this receipient list to be the entire
+      //   member list.
+      const partialSend = true;
+
+      promise = window.Signal.Util.sendToGroup(
         {
-          recipients,
-          body,
+          messageText: body,
           timestamp: this.get('sent_at'),
           attachments,
           quote: quoteWithData,
@@ -2247,15 +2340,12 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
           mentions: this.get('bodyRanges'),
           profileKey,
           groupV2,
-          group: groupV2
-            ? undefined
-            : {
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                id: this.getConversation()!.get('groupId')!,
-                type: window.textsecure.protobuf.GroupContext.Type.DELIVER,
-              },
+          groupV1,
         },
-        options
+        conversation,
+        ContentHint.RESENDABLE,
+        options,
+        partialSend
       );
     }
 
@@ -2386,7 +2476,13 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
   async resend(identifier: string): Promise<void | null | Array<void>> {
     const error = this.removeOutgoingErrors(identifier);
     if (!error) {
-      window.log.warn('resend: requested number was not present in errors');
+      window.log.warn(
+        'resend: requested number was not present in errors. continuing.'
+      );
+    }
+
+    if (this.isErased()) {
+      window.log.warn('resend: message is erased; refusing to resend');
       return null;
     }
 
@@ -2409,40 +2505,76 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
 
     // Special-case the self-send case - we send only a sync message
     if (identifier === this.OUR_NUMBER || identifier === this.OUR_UUID) {
-      const dataMessage = await window.textsecure.messaging.getMessageProto(
-        identifier,
-        body,
+      const dataMessage = await window.textsecure.messaging.getDataMessage({
         attachments,
-        quoteWithData,
-        previewWithData,
-        stickerWithData,
-        null,
-        this.get('deletedForEveryoneTimestamp'),
-        this.get('sent_at'),
-        this.get('expireTimer'),
+        body,
+        deletedForEveryoneTimestamp: this.get('deletedForEveryoneTimestamp'),
+        expireTimer: this.get('expireTimer'),
+        mentions: this.get('bodyRanges'),
+        preview: previewWithData,
         profileKey,
-        undefined, // flags
-        this.get('bodyRanges')
-      );
+        quote: quoteWithData,
+        reaction: null,
+        recipients: [identifier],
+        sticker: stickerWithData,
+        timestamp: this.get('sent_at'),
+      });
       return this.sendSyncMessageOnly(dataMessage);
     }
 
     const {
+      ContentHint,
+    } = window.textsecure.protobuf.UnidentifiedSenderMessage.Message;
+    const parentConversation = this.getConversation();
+    const groupId = parentConversation?.get('groupId');
+    const {
       wrap,
       sendOptions,
     } = await window.ConversationController.prepareForSend(identifier);
-    const promise = window.textsecure.messaging.sendMessageToIdentifier(
-      identifier,
-      body,
+    const group =
+      groupId && parentConversation?.isGroupV1()
+        ? {
+            id: groupId,
+            type: window.textsecure.protobuf.GroupContext.Type.DELIVER,
+          }
+        : undefined;
+
+    const timestamp = this.get('sent_at');
+    const contentMessage = await window.textsecure.messaging.getContentMessage({
       attachments,
-      quoteWithData,
-      previewWithData,
-      stickerWithData,
-      null,
-      this.get('deletedForEveryoneTimestamp'),
-      this.get('sent_at'),
-      this.get('expireTimer'),
-      profileKey,
+      body,
+      expireTimer: this.get('expireTimer'),
+      group,
+      groupV2: parentConversation?.getGroupV2Info(),
+      preview: previewWithData,
+      quote: quoteWithData,
+      mentions: this.get('bodyRanges'),
+      recipients: [identifier],
+      sticker: stickerWithData,
+      timestamp,
+    });
+
+    if (parentConversation) {
+      const senderKeyInfo = parentConversation.get('senderKeyInfo');
+      if (senderKeyInfo && senderKeyInfo.distributionId) {
+        const senderKeyDistributionMessage = await window.textsecure.messaging.getSenderKeyDistributionMessage(
+          senderKeyInfo.distributionId
+        );
+
+        window.dcodeIO.ByteBuffer.wrap(
+          window.Signal.Crypto.typedArrayToArrayBuffer(
+            senderKeyDistributionMessage.serialize()
+          )
+        );
+      }
+    }
+
+    const promise = window.textsecure.messaging.sendMessageProtoAndWait(
+      timestamp,
+      [identifier],
+      contentMessage,
+      ContentHint.RESENDABLE,
+      groupId && parentConversation?.isGroupV2() ? groupId : undefined,
       sendOptions
     );
 
@@ -2489,7 +2621,10 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
           sent_to: _.union(sentTo, result.successfulIdentifiers),
           sent: true,
           expirationStartTimestamp: Date.now(),
-          unidentifiedDeliveries: result.unidentifiedDeliveries,
+          unidentifiedDeliveries: _.union(
+            this.get('unidentifiedDeliveries') || [],
+            result.unidentifiedDeliveries
+          ),
         });
 
         if (!this.doNotSave) {
@@ -2578,7 +2713,10 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
               sent_to: _.union(sentTo, result.successfulIdentifiers),
               sent: true,
               expirationStartTimestamp,
-              unidentifiedDeliveries: result.unidentifiedDeliveries,
+              unidentifiedDeliveries: _.union(
+                this.get('unidentifiedDeliveries') || [],
+                result.unidentifiedDeliveries
+              ),
             });
             promises.push(this.sendSyncMessage());
           } else if (result.errors) {
@@ -3435,6 +3573,24 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         }
       }
 
+      // Now check for decryption error placeholders
+      const { retryPlaceholders } = window.Signal.Services;
+      if (retryPlaceholders) {
+        const item = await retryPlaceholders.findByMessageAndRemove(
+          conversationId,
+          message.get('sent_at')
+        );
+        if (item) {
+          window.log.info(
+            `handleDataMessage: found retry placeholder. Updating ${message.idForLogging()} received_at/received_at_ms`
+          );
+          message.set({
+            received_at: item.receivedAtCounter,
+            received_at_ms: item.receivedAt,
+          });
+        }
+      }
+
       // GroupV2
 
       if (initialMessage.groupV2) {
@@ -3989,20 +4145,22 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const message = this;
     const type = message.get('type');
+    let changed = false;
 
     if (type === 'outgoing') {
       const receipts = window.Whisper.DeliveryReceipts.forMessage(
         conversation,
         message
       );
-      receipts.forEach(receipt =>
+      receipts.forEach(receipt => {
         message.set({
           delivered: (message.get('delivered') || 0) + 1,
           delivered_to: _.union(message.get('delivered_to') || [], [
             receipt.get('deliveredTo'),
           ]),
-        })
-      );
+        });
+        changed = true;
+      });
     }
 
     if (type === 'incoming') {
@@ -4026,6 +4184,7 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         if (c) {
           c.onReadMessage(message);
         }
+        changed = true;
       } else if (isFirstRun) {
         conversation.set({
           unreadCount: (conversation.get('unreadCount') || 0) + 1,
@@ -4044,17 +4203,22 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
         message.set({
           read_by: _.union(message.get('read_by'), readBy),
         });
+        changed = true;
       }
 
       // A sync'd message to ourself is automatically considered read/delivered
-      if (conversation.isMe()) {
+      if (isFirstRun && conversation.isMe()) {
         message.set({
           read_by: conversation.getRecipients(),
           delivered_to: conversation.getRecipients(),
         });
+        changed = true;
       }
 
-      message.set({ recipients: conversation.getRecipients() });
+      if (isFirstRun) {
+        message.set({ recipients: conversation.getRecipients() });
+        changed = true;
+      }
     }
 
     // Check for out-of-order view syncs
@@ -4062,23 +4226,37 @@ export class MessageModel extends window.Backbone.Model<MessageAttributesType> {
       const viewSync = window.Whisper.ViewSyncs.forMessage(message);
       if (viewSync) {
         await message.markViewed({ fromSync: true });
+        changed = true;
       }
     }
 
     // Does this message have any pending, previously-received associated reactions?
     const reactions = window.Whisper.Reactions.forMessage(message);
     await Promise.all(
-      reactions.map(reaction => message.handleReaction(reaction, false))
+      reactions.map(async reaction => {
+        await message.handleReaction(reaction, false);
+        changed = true;
+      })
     );
 
     // Does this message have any pending, previously-received associated
     // delete for everyone messages?
     const deletes = window.Whisper.Deletes.forMessage(message);
     await Promise.all(
-      deletes.map(del =>
-        window.Signal.Util.deleteForEveryone(message, del, false)
-      )
+      deletes.map(async del => {
+        await window.Signal.Util.deleteForEveryone(message, del, false);
+        changed = true;
+      })
     );
+
+    if (changed && !isFirstRun) {
+      window.log.info(
+        `modifyTargetMessage/${this.idForLogging()}: Changes in second run; saving.`
+      );
+      await window.Signal.Data.saveMessage(this.attributes, {
+        Message: window.Whisper.Message,
+      });
+    }
   }
 
   async handleReaction(

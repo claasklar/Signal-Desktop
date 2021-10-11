@@ -1066,7 +1066,7 @@
         "description": ""
     },
     "viewRecentMedia": {
-        "message": "Rodyk paskiausią mediją",
+        "message": "Rodyti paskiausią mediją",
         "description": "This is a menu item for viewing all media (images + video) in a conversation, using the imperative case, as in a command."
     },
     "verifyHelp": {

@@ -10,7 +10,9 @@ import { EmojiPicker } from '../emoji/EmojiPicker';
 import { setup as setupI18n } from '../../../js/modules/i18n';
 import enMessages from '../../../_locales/en/messages.json';
 import { PropsType as TimelineItemProps, TimelineItem } from './TimelineItem';
+import { UniversalTimerNotification } from './UniversalTimerNotification';
 import { CallMode } from '../../types/Calling';
+import { getDefaultConversation } from '../../test-both/helpers/getDefaultConversation';
 
 const i18n = setupI18n('en', enMessages);
 
@@ -31,6 +33,10 @@ const renderEmojiPicker: TimelineItemProps['renderEmojiPicker'] = ({
 
 const renderContact = (conversationId: string) => (
   <React.Fragment key={conversationId}>{conversationId}</React.Fragment>
+);
+
+const renderUniversalTimerNotification = () => (
+  <UniversalTimerNotification i18n={i18n} expireTimer={3600} />
 );
 
 const getDefaultProps = () => ({
@@ -72,6 +78,7 @@ const getDefaultProps = () => ({
   returnToActiveCall: action('returnToActiveCall'),
 
   renderContact,
+  renderUniversalTimerNotification,
   renderEmojiPicker,
   renderAudioAttachment: () => <div>*AudioAttachment*</div>,
 });
@@ -86,7 +93,7 @@ storiesOf('Components/Conversation/TimelineItem', module)
         timestamp: Date.now(),
         author: {
           phoneNumber: '(202) 555-2001',
-          color: 'green',
+          color: 'forest',
         },
         text: '🔥',
       },
@@ -99,10 +106,24 @@ storiesOf('Components/Conversation/TimelineItem', module)
       {
         type: 'timerNotification',
         data: {
-          type: 'fromOther',
           phoneNumber: '(202) 555-0000',
-          timespan: '1 hour',
+          expireTimer: 60,
+          ...getDefaultConversation(),
+          type: 'fromOther',
         },
+      },
+      {
+        type: 'chatSessionRefreshed',
+      },
+      {
+        type: 'deliveryIssue',
+        data: {
+          sender: getDefaultConversation(),
+        },
+      },
+      {
+        type: 'universalTimerNotification',
+        data: null,
       },
       {
         type: 'callHistory',
@@ -367,7 +388,6 @@ storiesOf('Components/Conversation/TimelineItem', module)
               item={item as TimelineItemProps['item']}
               i18n={i18n}
             />
-            <hr />
           </React.Fragment>
         ))}
       </>

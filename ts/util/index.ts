@@ -35,6 +35,9 @@ import {
 import * as zkgroup from './zkgroup';
 import { StartupQueue } from './StartupQueue';
 import { postLinkExperience } from './postLinkExperience';
+import { sendToGroup, sendContentMessageToGroup } from './sendToGroup';
+import { RetryPlaceholders } from './retryPlaceholders';
+import * as expirationTimer from './expirationTimer';
 
 export {
   GoogleChrome,
@@ -61,11 +64,15 @@ export {
   parseRemoteClientExpiration,
   postLinkExperience,
   queueUpdateMessage,
+  RetryPlaceholders,
   saveNewMessageBatcher,
+  sendContentMessageToGroup,
+  sendToGroup,
   setBatchingStrategy,
   sessionRecordToProtobuf,
   sessionStructureToArrayBuffer,
   sleep,
   toWebSafeBase64,
   zkgroup,
+  expirationTimer,
 };
