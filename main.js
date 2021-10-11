@@ -1159,7 +1159,7 @@ function showCaptchaWindow() {
 
   handleCommonWindowEvents(captchaWindow);
 
-  captchaWindow.loadURL(prepareUrl([config.get('captchaUrl')]));
+  captchaWindow.loadURL(prepareUrl(new URL(config.get('captchaUrl'))));
 
   captchaWindow.on('closed', () => {
     captchaWindow = null;
