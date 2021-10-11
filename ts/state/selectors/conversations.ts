@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import memoizee from 'memoizee';
-import { fromPairs, isNumber, isString } from 'lodash';
+import { fromPairs, isNumber } from 'lodash';
 import { createSelector } from 'reselect';
 
 import { StateType } from '../reducer';
@@ -28,6 +28,7 @@ import { TimelineItemType } from '../../components/conversation/TimelineItem';
 import { assert } from '../../util/assert';
 import { isConversationUnregistered } from '../../util/isConversationUnregistered';
 import { filterAndSortConversationsByTitle } from '../../util/filterAndSortConversations';
+import { ContactNameColors, ContactNameColorType } from '../../types/Colors';
 
 import {
   getInteractionMode,
@@ -37,6 +38,7 @@ import {
   getUserNumber,
 } from './user';
 import { getPinnedConversationIds } from './items';
+import { isInSystemContacts } from '../../util/isInSystemContacts';
 
 let placeholderContact: ConversationType;
 export const getPlaceholderContact = (): ConversationType => {
@@ -365,7 +367,7 @@ function isTrusted(conversation: ConversationType): boolean {
   }
 
   return Boolean(
-    isString(conversation.name) ||
+    isInSystemContacts(conversation) ||
       conversation.profileSharing ||
       conversation.isMe
   );
@@ -849,4 +851,63 @@ export const getInvitedContactsForNewlyCreatedGroup = createSelector(
       conversationLookup,
       invitedConversationIdsForNewlyCreatedGroup
     )
+);
+
+const getCachedConversationMemberColorsSelector = createSelector(
+  getConversationSelector,
+  (conversationSelector: GetConversationByIdType) => {
+    return memoizee(
+      (conversationId: string) => {
+        const contactNameColors: Map<string, ContactNameColorType> = new Map();
+        const { sortedGroupMembers = [] } = conversationSelector(
+          conversationId
+        );
+
+        [...sortedGroupMembers]
+          .sort((left, right) =>
+            String(left.uuid) > String(right.uuid) ? 1 : -1
+          )
+          .forEach((member, i) => {
+            contactNameColors.set(
+              member.id,
+              ContactNameColors[i % ContactNameColors.length]
+            );
+          });
+
+        return contactNameColors;
+      },
+      { max: 100 }
+    );
+  }
+);
+
+export const getContactNameColorSelector = createSelector(
+  getCachedConversationMemberColorsSelector,
+  conversationMemberColorsSelector => {
+    return (
+      conversationId: string,
+      contactId: string
+    ): ContactNameColorType => {
+      const contactNameColors = conversationMemberColorsSelector(
+        conversationId
+      );
+      const color = contactNameColors.get(contactId);
+      if (!color) {
+        assert(false, `No color generated for contact ${contactId}`);
+        return ContactNameColors[0];
+      }
+      return color;
+    };
+  }
+);
+
+export const getConversationsWithCustomColorSelector = createSelector(
+  getAllConversations,
+  conversations => {
+    return (colorId: string): Array<ConversationType> => {
+      return conversations.filter(
+        conversation => conversation.customColorId === colorId
+      );
+    };
+  }
 );

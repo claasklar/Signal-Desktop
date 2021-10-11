@@ -14,6 +14,7 @@ import { MessageModel } from '../models/messages';
 import { ConversationModel } from '../models/conversations';
 import { StoredJob } from '../jobs/types';
 import { ReactionType } from '../types/Reactions';
+import { ConversationColorType, CustomColorType } from '../types/Colors';
 
 export type AttachmentDownloadJobType = {
   id: string;
@@ -136,6 +137,7 @@ export type UnprocessedType = {
   source?: string;
   sourceUuid?: string;
   sourceDevice?: number;
+  serverGuid?: string;
   serverTimestamp?: number;
   decrypted?: string;
 };
@@ -144,6 +146,7 @@ export type UnprocessedUpdateType = {
   source?: string;
   sourceUuid?: string;
   sourceDevice?: string;
+  serverGuid?: string;
   serverTimestamp?: number;
   decrypted?: string;
 };
@@ -185,6 +188,7 @@ export type DataInterface = {
   getSenderKeyById: (id: string) => Promise<SenderKeyType | undefined>;
   removeAllSenderKeys: () => Promise<void>;
   getAllSenderKeys: () => Promise<Array<SenderKeyType>>;
+  removeSenderKeyById: (id: string) => Promise<void>;
 
   createOrUpdateSession: (data: SessionType) => Promise<void>;
   createOrUpdateSessions: (array: Array<SessionType>) => Promise<void>;
@@ -192,8 +196,6 @@ export type DataInterface = {
     sessions: Array<SessionType>;
     unprocessed: Array<UnprocessedType>;
   }): Promise<void>;
-  getSessionById: (id: string) => Promise<SessionType | undefined>;
-  getSessionsById: (conversationId: string) => Promise<Array<SessionType>>;
   bulkAddSessions: (array: Array<SessionType>) => Promise<void>;
   removeSessionById: (id: string) => Promise<void>;
   removeSessionsByConversation: (conversationId: string) => Promise<void>;
@@ -213,6 +215,7 @@ export type DataInterface = {
   ) => Promise<Array<ConversationType>>;
 
   getMessageCount: (conversationId?: string) => Promise<number>;
+  hasUserInitiatedMessages: (conversationId: string) => Promise<boolean>;
   saveMessages: (
     arrayOfMessages: Array<MessageType>,
     options: { forceSave?: boolean }
@@ -233,10 +236,6 @@ export type DataInterface = {
 
   getUnprocessedCount: () => Promise<number>;
   getAllUnprocessed: () => Promise<Array<UnprocessedType>>;
-  saveUnprocessed: (
-    data: UnprocessedType,
-    options?: { forceSave?: boolean }
-  ) => Promise<string>;
   updateUnprocessedAttempts: (id: string, attempts: number) => Promise<void>;
   updateUnprocessedWithData: (
     id: string,
@@ -246,10 +245,6 @@ export type DataInterface = {
     array: Array<{ id: string; data: UnprocessedUpdateType }>
   ) => Promise<void>;
   getUnprocessedById: (id: string) => Promise<UnprocessedType | undefined>;
-  saveUnprocesseds: (
-    arrayOfUnprocessed: Array<UnprocessedType>,
-    options?: { forceSave?: boolean }
-  ) => Promise<void>;
   removeUnprocessed: (id: string | Array<string>) => Promise<void>;
   removeAllUnprocessed: () => Promise<void>;
 
@@ -310,10 +305,21 @@ export type DataInterface = {
     conversationId: string,
     options: { limit: number }
   ) => Promise<Array<MessageType>>;
+  getMessageServerGuidsForSpam: (
+    conversationId: string
+  ) => Promise<Array<string>>;
 
   getJobsInQueue(queueType: string): Promise<Array<StoredJob>>;
   insertJob(job: Readonly<StoredJob>): Promise<void>;
   deleteJob(id: string): Promise<void>;
+
+  updateAllConversationColors: (
+    conversationColor?: ConversationColorType,
+    customColorData?: {
+      id: string;
+      value: CustomColorType;
+    }
+  ) => Promise<void>;
 };
 
 // The reason for client/server divergence is the need to inject Backbone models and

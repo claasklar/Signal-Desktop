@@ -1,6 +1,12 @@
 // Copyright 2020-2021 Signal Messenger, LLC
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { isNumber } from 'lodash';
+import {
+  DecryptionErrorMessage,
+  PlaintextContent,
+} from '@signalapp/signal-client';
+
 import { DataMessageClass } from './textsecure.d';
 import { MessageAttributesType } from './model-types.d';
 import { WhatIsThis } from './window.d';
@@ -22,8 +28,38 @@ import { ourProfileKeyService } from './services/ourProfileKey';
 import { shouldRespondWithProfileKey } from './util/shouldRespondWithProfileKey';
 import { setToExpire } from './services/MessageUpdater';
 import { LatestQueue } from './util/LatestQueue';
+import { parseIntOrThrow } from './util/parseIntOrThrow';
+import {
+  DecryptionErrorType,
+  RetryRequestType,
+} from './textsecure/MessageReceiver';
+import { connectToServerWithStoredCredentials } from './util/connectToServerWithStoredCredentials';
+import * as universalExpireTimer from './util/universalExpireTimer';
 
 const MAX_ATTACHMENT_DOWNLOAD_AGE = 3600 * 72 * 1000;
+
+export function isOverHourIntoPast(timestamp: number): boolean {
+  const HOUR = 1000 * 60 * 60;
+  return isNumber(timestamp) && isOlderThan(timestamp, HOUR);
+}
+
+type SessionResetsType = Record<string, number>;
+export async function cleanupSessionResets(): Promise<void> {
+  const sessionResets = window.storage.get<SessionResetsType>(
+    'sessionResets',
+    {}
+  );
+
+  const keys = Object.keys(sessionResets);
+  keys.forEach(key => {
+    const timestamp = sessionResets[key];
+    if (!timestamp || isOverHourIntoPast(timestamp)) {
+      delete sessionResets[key];
+    }
+  });
+
+  await window.storage.put('sessionResets', sessionResets);
+}
 
 export async function startApp(): Promise<void> {
   window.startupProcessingQueue = new window.Signal.Util.StartupQueue();
@@ -376,6 +412,38 @@ export async function startApp(): Promise<void> {
     }
     first = false;
 
+    if (!window.storage.get('defaultConversationColor')) {
+      window.storage.put('defaultConversationColor', {
+        color: 'ultramarine',
+      });
+    }
+
+    cleanupSessionResets();
+    const retryPlaceholders = new window.Signal.Util.RetryPlaceholders();
+    window.Signal.Services.retryPlaceholders = retryPlaceholders;
+
+    setInterval(async () => {
+      const expired = await retryPlaceholders.getExpiredAndRemove();
+      window.log.info(
+        `retryPlaceholders/interval: Found ${expired.length} expired items`
+      );
+      expired.forEach(item => {
+        const { conversationId, senderUuid } = item;
+        const conversation = window.ConversationController.get(conversationId);
+        if (conversation) {
+          const receivedAt = Date.now();
+          const receivedAtCounter = window.Signal.Util.incrementMessageCounter();
+          conversation.queueJob(() =>
+            conversation.addDeliveryIssue({
+              receivedAt,
+              receivedAtCounter,
+              senderUuid,
+            })
+          );
+        }
+      });
+    }, FIVE_MINUTES);
+
     // These make key operations available to IPC handlers created in preload.js
     window.Events = {
       getDeviceName: () => window.textsecure.storage.user.getDeviceName(),
@@ -466,6 +534,19 @@ export async function startApp(): Promise<void> {
       getLastSyncTime: () => window.storage.get('synced_at'),
       setLastSyncTime: (value: number) =>
         window.storage.put('synced_at', value),
+      getUniversalExpireTimer: (): number | undefined => {
+        return universalExpireTimer.get();
+      },
+      setUniversalExpireTimer: async (
+        newValue: number | undefined
+      ): Promise<void> => {
+        await universalExpireTimer.set(newValue);
+        const conversationId = window.ConversationController.getOurConversationIdOrThrow();
+        const account = window.ConversationController.get(conversationId);
+        assert(account, "Account wasn't found");
+
+        account.captureChange('universalExpireTimer');
+      },
 
       addDarkOverlay: () => {
         if ($('.dark-overlay').length) {
@@ -1868,8 +1949,10 @@ export async function startApp(): Promise<void> {
         await messageReceiver.stopProcessing();
 
         await window.waitForAllBatchers();
-        messageReceiver.unregisterBatchers();
+      }
 
+      if (messageReceiver) {
+        messageReceiver.unregisterBatchers();
         messageReceiver = null;
       }
 
@@ -1974,7 +2057,8 @@ export async function startApp(): Promise<void> {
       addQueuedEventListener('read', onReadReceipt);
       addQueuedEventListener('verified', onVerified);
       addQueuedEventListener('error', onError);
-      addQueuedEventListener('light-session-reset', onLightSessionReset);
+      addQueuedEventListener('decryption-error', onDecryptionError);
+      addQueuedEventListener('retry-request', onRetryRequest);
       addQueuedEventListener('empty', onEmpty);
       addQueuedEventListener('reconnect', onReconnect);
       addQueuedEventListener('configuration', onConfiguration);
@@ -2038,10 +2122,10 @@ export async function startApp(): Promise<void> {
 
       const udSupportKey = 'hasRegisterSupportForUnauthenticatedDelivery';
       if (!window.storage.get(udSupportKey)) {
-        const server = window.WebAPI.connect({
-          username: USERNAME || OLD_USERNAME,
-          password: PASSWORD,
-        });
+        const server = connectToServerWithStoredCredentials(
+          window.WebAPI,
+          window.storage
+        );
         try {
           await server.registerSupportForUnauthenticatedDelivery();
           window.storage.put(udSupportKey, true);
@@ -2082,16 +2166,17 @@ export async function startApp(): Promise<void> {
       }
 
       if (connectCount === 1) {
-        const server = window.WebAPI.connect({
-          username: USERNAME || OLD_USERNAME,
-          password: PASSWORD,
-        });
+        const server = connectToServerWithStoredCredentials(
+          window.WebAPI,
+          window.storage
+        );
         try {
           // Note: we always have to register our capabilities all at once, so we do this
           //   after connect on every startup
           await server.registerCapabilities({
             'gv2-3': true,
             'gv1-migration': true,
+            senderKey: false,
           });
         } catch (error) {
           window.log.error(
@@ -2259,6 +2344,9 @@ export async function startApp(): Promise<void> {
       newVersion
     );
 
+    // Go back to main process before processing delayed actions
+    await window.sqlInitializer.goBackToMainProcess();
+
     profileKeyResponseQueue.start();
     lightSessionResetQueue.start();
     window.Whisper.deliveryReceiptQueue.start();
@@ -2283,7 +2371,6 @@ export async function startApp(): Promise<void> {
       );
     }
 
-    await window.sqlInitializer.goBackToMainProcess();
     window.Signal.Util.setBatchingStrategy(false);
 
     const attachmentDownloadQueue = window.attachmentDownloadQueue || [];
@@ -2561,7 +2648,6 @@ export async function startApp(): Promise<void> {
 
       conversation.set({
         name: details.name,
-        color: details.color,
         inbox_position: details.inboxPosition,
       });
 
@@ -2668,7 +2754,6 @@ export async function startApp(): Promise<void> {
     const updates = {
       name: details.name,
       members,
-      color: details.color,
       type: 'group',
       inbox_position: details.inboxPosition,
     } as WhatIsThis;
@@ -3180,6 +3265,7 @@ export async function startApp(): Promise<void> {
       sourceUuid: data.sourceUuid,
       sourceDevice: data.sourceDevice,
       sent_at: data.timestamp,
+      serverGuid: data.serverGuid,
       serverTimestamp: data.serverTimestamp,
       received_at: data.receivedAtCounter,
       received_at_ms: data.receivedAtDate,
@@ -3218,8 +3304,10 @@ export async function startApp(): Promise<void> {
       await messageReceiver.stopProcessing();
 
       await window.waitForAllBatchers();
-      messageReceiver.unregisterBatchers();
+    }
 
+    if (messageReceiver) {
+      messageReceiver.unregisterBatchers();
       messageReceiver = null;
     }
 
@@ -3245,6 +3333,13 @@ export async function startApp(): Promise<void> {
 
     try {
       await window.textsecure.storage.protocol.removeAllConfiguration();
+
+      // This was already done in the database with removeAllConfiguration; this does it
+      //   for all the conversation models in memory.
+      window.getConversations().forEach(conversation => {
+        // eslint-disable-next-line no-param-reassign
+        delete conversation.attributes.senderKeyInfo;
+      });
 
       // These two bits of data are important to ensure that the app loads up
       //   the conversation list, instead of showing just the QR code screen.
@@ -3307,18 +3402,271 @@ export async function startApp(): Promise<void> {
     window.log.warn('background onError: Doing nothing with incoming error');
   }
 
-  type LightSessionResetEventType = Event & {
-    senderUuid: string;
-    senderDevice: number;
+  type RetryRequestEventType = Event & {
+    retryRequest: RetryRequestType;
   };
 
-  function onLightSessionReset(event: LightSessionResetEventType) {
-    const { senderUuid, senderDevice } = event;
+  function isInList(
+    conversation: ConversationModel,
+    list: Array<string | undefined | null> | undefined
+  ): boolean {
+    const uuid = conversation.get('uuid');
+    const e164 = conversation.get('e164');
+    const id = conversation.get('id');
 
-    if (event.confirm) {
-      event.confirm();
+    if (!list) {
+      return false;
     }
 
+    if (list.includes(id)) {
+      return true;
+    }
+
+    if (uuid && list.includes(uuid)) {
+      return true;
+    }
+
+    if (e164 && list.includes(e164)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  async function onRetryRequest(event: RetryRequestEventType) {
+    const { retryRequest } = event;
+    const {
+      requesterUuid,
+      requesterDevice,
+      sentAt,
+      senderDevice,
+    } = retryRequest;
+    const logId = `${requesterUuid}.${requesterDevice} ${sentAt}-${senderDevice}`;
+
+    window.log.info(`onRetryRequest/${logId}: Starting...`);
+
+    const requesterConversation = window.ConversationController.getOrCreate(
+      requesterUuid,
+      'private'
+    );
+
+    const messages = await window.Signal.Data.getMessagesBySentAt(sentAt, {
+      MessageCollection: window.Whisper.MessageCollection,
+    });
+
+    const targetMessage = messages.find(message => {
+      if (message.get('sent_at') !== sentAt) {
+        return false;
+      }
+
+      if (message.get('type') !== 'outgoing') {
+        return false;
+      }
+
+      if (!isInList(requesterConversation, message.get('sent_to'))) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (!targetMessage) {
+      window.log.info(`onRetryRequest/${logId}: Did not find message`);
+      return;
+    }
+
+    if (targetMessage.isErased()) {
+      window.log.info(
+        `onRetryRequest/${logId}: Message is erased, refusing to send again.`
+      );
+      return;
+    }
+
+    const HOUR = 60 * 60 * 1000;
+    const ONE_DAY = 24 * HOUR;
+    if (isOlderThan(sentAt, ONE_DAY)) {
+      window.log.info(
+        `onRetryRequest/${logId}: Message is too old, refusing to send again.`
+      );
+      return;
+    }
+
+    const sentUnidentified = isInList(
+      requesterConversation,
+      targetMessage.get('unidentifiedDeliveries')
+    );
+    const wasDelivered = isInList(
+      requesterConversation,
+      targetMessage.get('delivered_to')
+    );
+    if (sentUnidentified && wasDelivered) {
+      window.log.info(
+        `onRetryRequest/${logId}: Message was sent sealed sender and was delivered, refusing to send again.`
+      );
+      return;
+    }
+
+    const ourDeviceId = parseIntOrThrow(
+      window.textsecure.storage.user.getDeviceId(),
+      'onRetryRequest/getDeviceId'
+    );
+    if (ourDeviceId === senderDevice) {
+      const address = `${requesterUuid}.${requesterDevice}`;
+      window.log.info(
+        `onRetryRequest/${logId}: Devices match, archiving session`
+      );
+      await window.textsecure.storage.protocol.archiveSession(address);
+    }
+
+    window.log.info(`onRetryRequest/${logId}: Resending message`);
+    targetMessage.resend(requesterUuid);
+  }
+
+  type DecryptionErrorEventType = Event & {
+    decryptionError: DecryptionErrorType;
+  };
+
+  async function onDecryptionError(event: DecryptionErrorEventType) {
+    const { decryptionError } = event;
+    const { senderUuid, senderDevice, timestamp } = decryptionError;
+    const logId = `${senderUuid}.${senderDevice} ${timestamp}`;
+
+    window.log.info(`onDecryptionError/${logId}: Starting...`);
+
+    const conversation = window.ConversationController.getOrCreate(
+      senderUuid,
+      'private'
+    );
+    const capabilities = conversation.get('capabilities');
+    if (!capabilities) {
+      await conversation.getProfiles();
+    }
+
+    if (conversation.get('capabilities')?.senderKey) {
+      await requestResend(decryptionError);
+    } else {
+      await startAutomaticSessionReset(decryptionError);
+    }
+
+    window.log.info(`onDecryptionError/${logId}: ...complete`);
+  }
+
+  async function requestResend(decryptionError: DecryptionErrorType) {
+    const {
+      cipherTextBytes,
+      cipherTextType,
+      contentHint,
+      groupId,
+      receivedAtCounter,
+      receivedAtDate,
+      senderDevice,
+      senderUuid,
+      timestamp,
+    } = decryptionError;
+    const logId = `${senderUuid}.${senderDevice} ${timestamp}`;
+
+    window.log.info(`requestResend/${logId}: Starting...`, {
+      cipherTextBytesLength: cipherTextBytes?.byteLength,
+      cipherTextType,
+      contentHint,
+      groupId: groupId ? `groupv2(${groupId})` : undefined,
+    });
+
+    // 1. Find the target conversation
+
+    const group = groupId
+      ? window.ConversationController.get(groupId)
+      : undefined;
+    const sender = window.ConversationController.getOrCreate(
+      senderUuid,
+      'private'
+    );
+    const conversation = group || sender;
+
+    function immediatelyAddError() {
+      conversation.queueJob(async () => {
+        conversation.addDeliveryIssue({
+          receivedAt: receivedAtDate,
+          receivedAtCounter,
+          senderUuid,
+        });
+      });
+    }
+
+    // 2. Send resend request
+
+    if (!cipherTextBytes || !isNumber(cipherTextType)) {
+      window.log.warn(
+        `requestResend/${logId}: Missing cipherText information, failing over to automatic reset`
+      );
+      startAutomaticSessionReset(decryptionError);
+      return;
+    }
+
+    try {
+      const message = DecryptionErrorMessage.forOriginal(
+        Buffer.from(cipherTextBytes),
+        cipherTextType,
+        timestamp,
+        senderDevice
+      );
+
+      const plaintext = PlaintextContent.from(message);
+      const options = await conversation.getSendOptions();
+      const result = await window.textsecure.messaging.sendRetryRequest({
+        plaintext,
+        options,
+        uuid: senderUuid,
+      });
+      if (result.errors && result.errors.length > 0) {
+        throw result.errors[0];
+      }
+    } catch (error) {
+      window.log.error(
+        `requestResend/${logId}: Failed to send retry request, failing over to automatic reset`,
+        error && error.stack ? error.stack : error
+      );
+      startAutomaticSessionReset(decryptionError);
+      return;
+    }
+
+    const {
+      ContentHint,
+    } = window.textsecure.protobuf.UnidentifiedSenderMessage.Message;
+
+    // 3. Determine how to represent this to the user. Three different options.
+
+    // This is a sync message of some kind that cannot be resent. Reset session but don't
+    //   show any UI for it.
+    if (contentHint === ContentHint.SUPPLEMENTARY) {
+      scheduleSessionReset(senderUuid, senderDevice);
+      return;
+    }
+
+    // If we request a re-send, it might just work out for us!
+    if (contentHint === ContentHint.RESENDABLE) {
+      const { retryPlaceholders } = window.Signal.Services;
+      assert(retryPlaceholders, 'requestResend: adding placeholder');
+
+      window.log.info(`requestResend/${logId}: Adding placeholder`);
+      await retryPlaceholders.add({
+        conversationId: conversation.get('id'),
+        receivedAt: receivedAtDate,
+        receivedAtCounter,
+        sentAt: timestamp,
+        senderUuid,
+      });
+
+      return;
+    }
+
+    window.log.warn(
+      `requestResend/${logId}: No content hint, adding error immediately`
+    );
+    immediatelyAddError();
+  }
+
+  function scheduleSessionReset(senderUuid: string, senderDevice: number) {
     // Postpone sending light session resets until the queue is empty
     lightSessionResetQueue.add(() => {
       window.textsecure.storage.protocol.lightSessionReset(
@@ -3326,6 +3674,15 @@ export async function startApp(): Promise<void> {
         senderDevice
       );
     });
+  }
+
+  function startAutomaticSessionReset(decryptionError: DecryptionErrorType) {
+    const { senderUuid, senderDevice, timestamp } = decryptionError;
+    const logId = `${senderUuid}.${senderDevice} ${timestamp}`;
+
+    window.log.info(`startAutomaticSessionReset/${logId}: Starting...`);
+
+    scheduleSessionReset(senderUuid, senderDevice);
 
     const conversationId = window.ConversationController.ensureContactIds({
       uuid: senderUuid,
@@ -3347,8 +3704,9 @@ export async function startApp(): Promise<void> {
     }
 
     const receivedAt = Date.now();
+    const receivedAtCounter = window.Signal.Util.incrementMessageCounter();
     conversation.queueJob(async () => {
-      conversation.addChatSessionRefreshed(receivedAt);
+      conversation.addChatSessionRefreshed({ receivedAt, receivedAtCounter });
     });
   }
 

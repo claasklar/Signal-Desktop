@@ -175,6 +175,14 @@ describe('SignalProtocolStore', () => {
       assert.isTrue(
         constantTimeEqual(expected.serialize(), actual.serialize())
       );
+
+      await store.removeSenderKey(encodedAddress, distributionId);
+
+      const postDeleteGet = await store.getSenderKey(
+        encodedAddress,
+        distributionId
+      );
+      assert.isUndefined(postDeleteGet);
     });
 
     it('roundtrips through database', async () => {
@@ -197,6 +205,17 @@ describe('SignalProtocolStore', () => {
       assert.isTrue(
         constantTimeEqual(expected.serialize(), actual.serialize())
       );
+
+      await store.removeSenderKey(encodedAddress, distributionId);
+
+      // Re-fetch from the database to ensure we get the latest database value
+      await store.hydrateCaches();
+
+      const postDeleteGet = await store.getSenderKey(
+        encodedAddress,
+        distributionId
+      );
+      assert.isUndefined(postDeleteGet);
     });
   });
 
@@ -1280,6 +1299,54 @@ describe('SignalProtocolStore', () => {
     });
   });
 
+  describe('getOpenDevices', () => {
+    it('returns all open devices for a number', async () => {
+      const openRecord = getSessionRecord(true);
+      const openDevices = [1, 2, 3, 10].map(deviceId => {
+        return [number, deviceId].join('.');
+      });
+      await Promise.all(
+        openDevices.map(async encodedNumber => {
+          await store.storeSession(encodedNumber, openRecord);
+        })
+      );
+
+      const closedRecord = getSessionRecord(false);
+      await store.storeSession([number, 11].join('.'), closedRecord);
+
+      const result = await store.getOpenDevices([number, 'blah', 'blah2']);
+      assert.deepEqual(result, {
+        devices: [
+          {
+            id: 1,
+            identifier: number,
+          },
+          {
+            id: 2,
+            identifier: number,
+          },
+          {
+            id: 3,
+            identifier: number,
+          },
+          {
+            id: 10,
+            identifier: number,
+          },
+        ],
+        emptyIdentifiers: ['blah', 'blah2'],
+      });
+    });
+
+    it('returns empty array for a number with no device ids', async () => {
+      const result = await store.getOpenDevices(['foo']);
+      assert.deepEqual(result, {
+        devices: [],
+        emptyIdentifiers: ['foo'],
+      });
+    });
+  });
+
   describe('zones', () => {
     const zone = new Zone('zone', {
       pendingSessions: true,
@@ -1410,6 +1477,16 @@ describe('SignalProtocolStore', () => {
 
       assert.deepEqual(order, [1, 2, 3]);
     });
+
+    it('should not deadlock in archiveSiblingSessions', async () => {
+      const id = `${number}.1`;
+      const sibling = `${number}.2`;
+
+      await store.storeSession(id, getSessionRecord(true));
+      await store.storeSession(sibling, getSessionRecord(true));
+
+      await store.archiveSiblingSessions(id, { zone });
+    });
   });
 
   describe('Not yet processed messages', () => {
@@ -1453,7 +1530,7 @@ describe('SignalProtocolStore', () => {
       assert.strictEqual(items[2].envelope, 'third');
     });
 
-    it('saveUnprocessed successfully updates item', async () => {
+    it('can updates items', async () => {
       const id = '1-one';
       await store.addUnprocessed({
         id,

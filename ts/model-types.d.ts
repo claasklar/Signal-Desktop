@@ -6,12 +6,13 @@ import * as Backbone from 'backbone';
 import { GroupV2ChangeType } from './groups';
 import { LocalizerType, BodyRangeType, BodyRangesType } from './types/Util';
 import { CallHistoryDetailsFromDiskType } from './types/Calling';
-import { ColorType } from './types/Colors';
+import { CustomColorType } from './types/Colors';
 import {
   ConversationType,
   MessageType,
   LastMessageStatus,
 } from './state/ducks/conversations';
+import { DeviceType } from './textsecure/Types';
 import { SendOptionsType } from './textsecure/SendMessage';
 import { SendMessageChallengeData } from './textsecure/Errors';
 import {
@@ -24,6 +25,7 @@ import { MessageModel } from './models/messages';
 import { ConversationModel } from './models/conversations';
 import { ProfileNameChangeType } from './util/getStringForProfileChange';
 import { CapabilitiesType } from './textsecure/WebAPI';
+import { GroupNameCollisionsWithIdsByTitle } from './util/groupMemberNameCollisions';
 
 export type WhatIsThis = any;
 
@@ -128,18 +130,20 @@ export type MessageAttributesType = {
 
   id: string;
   type?:
-    | 'incoming'
-    | 'outgoing'
-    | 'group'
-    | 'keychange'
-    | 'verified-change'
-    | 'message-history-unsynced'
     | 'call-history'
     | 'chat-session-refreshed'
+    | 'delivery-issue'
+    | 'group'
     | 'group-v1-migration'
     | 'group-v2-change'
+    | 'incoming'
+    | 'keychange'
+    | 'message-history-unsynced'
+    | 'outgoing'
     | 'profile-change'
-    | 'timer-notification';
+    | 'timer-notification'
+    | 'universal-timer-notification'
+    | 'verified-change';
   body: string;
   attachments: Array<WhatIsThis>;
   preview: Array<WhatIsThis>;
@@ -170,6 +174,9 @@ export type MessageAttributesType = {
   //   background, when we were still in IndexedDB, before attachments had gone to disk
   // We set this so that the idle message upgrade process doesn't pick this message up
   schemaVersion: number;
+  // This should always be set for new messages, but older messages may not have them. We
+  //   may not have these for outbound messages, either, as we have not needed them.
+  serverGuid?: string;
   serverTimestamp?: number;
   source?: string;
   sourceUuid?: string;
@@ -189,6 +196,9 @@ export type ConversationAttributesType = {
   addedBy?: string;
   capabilities?: CapabilitiesType;
   color?: string;
+  conversationColor?: string;
+  customColor?: CustomColorType;
+  customColorId?: string;
   discoveredUnregisteredAt?: number;
   draftAttachments?: Array<{
     path?: string;
@@ -246,6 +256,7 @@ export type ConversationAttributesType = {
   profileName?: string;
   verified?: number;
   profileLastFetchedAt?: number;
+  pendingUniversalTimer?: string;
 
   // Group-only
   groupId?: string;
@@ -264,6 +275,11 @@ export type ConversationAttributesType = {
   secretParams?: string;
   publicParams?: string;
   revision?: number;
+  senderKeyInfo?: {
+    createdAtDate: number;
+    distributionId: string;
+    memberDevices: Array<DeviceType>;
+  };
 
   // GroupV2 other fields
   accessControl?: {
@@ -276,6 +292,7 @@ export type ConversationAttributesType = {
     path: string;
     hash?: string;
   } | null;
+  description?: string;
   expireTimer?: number;
   membersV2?: Array<GroupV2MemberType>;
   pendingMembersV2?: Array<GroupV2PendingMemberType>;
@@ -283,6 +300,7 @@ export type ConversationAttributesType = {
   groupInviteLinkPassword?: string;
   previousGroupV1Id?: string;
   previousGroupV1Members?: Array<string>;
+  acknowledgedGroupNameCollisions?: GroupNameCollisionsWithIdsByTitle;
 
   // Used only when user is waiting for approval to join via link
   isTemporary?: boolean;

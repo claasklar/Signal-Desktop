@@ -1796,7 +1796,7 @@
         }
     },
     "disappearingMessages__off": {
-        "message": "kapalı",
+        "message": "Kapalı",
         "description": "Label for option to turn off message expiration in the timer menu"
     },
     "disappearingMessages": {
@@ -3422,7 +3422,7 @@
         "description": "Label for muting the conversation"
     },
     "muteEightHours": {
-        "message": "8 saatliğine sustur",
+        "message": "8 saatliğine sessize al",
         "description": "Label for muting the conversation"
     },
     "muteDay": {
@@ -3434,7 +3434,7 @@
         "description": "Label for muting the conversation"
     },
     "muteAlways": {
-        "message": "Kalıcı olarak sustur",
+        "message": "Kalıcı olarak sessize al",
         "description": "Label for muting the conversation"
     },
     "unmute": {

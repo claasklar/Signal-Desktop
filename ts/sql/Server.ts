@@ -36,6 +36,7 @@ import { combineNames } from '../util/combineNames';
 import { getExpiresAt } from '../services/MessageUpdater';
 import { isNormalNumber } from '../util/isNormalNumber';
 import { isNotNil } from '../util/isNotNil';
+import { ConversationColorType, CustomColorType } from '../types/Colors';
 
 import {
   AttachmentDownloadJobType,
@@ -130,12 +131,11 @@ const dataInterface: ServerInterface = {
   getSenderKeyById,
   removeAllSenderKeys,
   getAllSenderKeys,
+  removeSenderKeyById,
 
   createOrUpdateSession,
   createOrUpdateSessions,
   commitSessionsAndUnprocessed,
-  getSessionById,
-  getSessionsById,
   bulkAddSessions,
   removeSessionById,
   removeSessionsByConversation,
@@ -154,12 +154,14 @@ const dataInterface: ServerInterface = {
   getAllConversationIds,
   getAllPrivateConversations,
   getAllGroupsInvolvingId,
+  updateAllConversationColors,
 
   searchConversations,
   searchMessages,
   searchMessagesInConversation,
 
   getMessageCount,
+  hasUserInitiatedMessages,
   saveMessage,
   saveMessages,
   removeMessage,
@@ -190,12 +192,10 @@ const dataInterface: ServerInterface = {
 
   getUnprocessedCount,
   getAllUnprocessed,
-  saveUnprocessed,
   updateUnprocessedAttempts,
   updateUnprocessedWithData,
   updateUnprocessedsWithData,
   getUnprocessedById,
-  saveUnprocesseds,
   removeUnprocessed,
   removeAllUnprocessed,
 
@@ -228,6 +228,7 @@ const dataInterface: ServerInterface = {
   getMessagesNeedingUpgrade,
   getMessagesWithVisualMediaAttachments,
   getMessagesWithFileAttachments,
+  getMessageServerGuidsForSpam,
 
   getJobsInQueue,
   insertJob,
@@ -1837,6 +1838,25 @@ function updateToSchemaVersion31(currentVersion: number, db: Database): void {
   console.log('updateToSchemaVersion31: success!');
 }
 
+function updateToSchemaVersion32(currentVersion: number, db: Database) {
+  if (currentVersion >= 32) {
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      ALTER TABLE messages
+      ADD COLUMN serverGuid STRING NULL;
+
+      ALTER TABLE unprocessed
+      ADD COLUMN serverGuid STRING NULL;
+    `);
+
+    db.pragma('user_version = 32');
+  })();
+  console.log('updateToSchemaVersion32: success!');
+}
+
 const SCHEMA_VERSIONS = [
   updateToSchemaVersion1,
   updateToSchemaVersion2,
@@ -1869,6 +1889,7 @@ const SCHEMA_VERSIONS = [
   updateToSchemaVersion29,
   updateToSchemaVersion30,
   updateToSchemaVersion31,
+  updateToSchemaVersion32,
 ];
 
 function updateSchema(db: Database): void {
@@ -2215,6 +2236,10 @@ async function getAllSenderKeys(): Promise<Array<SenderKeyType>> {
 
   return rows;
 }
+async function removeSenderKeyById(id: string): Promise<void> {
+  const db = getInstance();
+  prepare(db, 'DELETE FROM senderKeys WHERE id = $id').run({ id });
+}
 
 const SESSIONS_TABLE = 'sessions';
 function createOrUpdateSessionSync(data: SessionType): void {
@@ -2286,27 +2311,6 @@ async function commitSessionsAndUnprocessed({
   })();
 }
 
-async function getSessionById(id: string): Promise<SessionType | undefined> {
-  return getById(SESSIONS_TABLE, id);
-}
-async function getSessionsById(
-  conversationId: string
-): Promise<Array<SessionType>> {
-  const db = getInstance();
-  const rows: JSONRows = db
-    .prepare<Query>(
-      `
-      SELECT json
-      FROM sessions
-      WHERE conversationId = $conversationId;
-      `
-    )
-    .all({
-      conversationId,
-    });
-
-  return rows.map(row => jsonToObject(row.json));
-}
 function bulkAddSessions(array: Array<SessionType>): Promise<void> {
   return bulkAdd(SESSIONS_TABLE, array);
 }
@@ -2922,6 +2926,43 @@ async function getMessageCount(conversationId?: string): Promise<number> {
   return row['count(*)'];
 }
 
+// Called only for private conversations
+async function hasUserInitiatedMessages(
+  conversationId: string
+): Promise<boolean> {
+  const db = getInstance();
+
+  // We apply the limit in the sub-query so that `json_extract` wouldn't run
+  // for additional messages.
+  const row: { count: number } = db
+    .prepare<Query>(
+      `
+      SELECT COUNT(*) as count FROM
+        (
+          SELECT 1 FROM messages
+          WHERE
+            conversationId = $conversationId AND
+            (type IS NULL
+              OR
+              type NOT IN (
+                'profile-change',
+                'verified-change',
+                'message-history-unsynced',
+                'keychange',
+                'group-v1-migration',
+                'universal-timer-notification'
+              )
+            ) AND
+            json_extract(json, '$.expirationTimerUpdate') IS NULL
+          LIMIT 1
+        );
+      `
+    )
+    .get({ conversationId });
+
+  return row.count !== 0;
+}
+
 function saveMessageSync(
   data: MessageType,
   options: { forceSave?: boolean; alreadyInTransaction?: boolean } = {}
@@ -2954,6 +2995,7 @@ function saveMessageSync(
     received_at,
     schemaVersion,
     sent_at,
+    serverGuid,
     source,
     sourceUuid,
     sourceDevice,
@@ -2979,6 +3021,7 @@ function saveMessageSync(
     isViewOnce: isViewOnce ? 1 : 0,
     received_at: received_at || null,
     schemaVersion,
+    serverGuid: serverGuid || null,
     sent_at: sent_at || null,
     source: source || null,
     sourceUuid: sourceUuid || null,
@@ -3007,6 +3050,7 @@ function saveMessageSync(
         isViewOnce = $isViewOnce,
         received_at = $received_at,
         schemaVersion = $schemaVersion,
+        serverGuid = $serverGuid,
         sent_at = $sent_at,
         source = $source,
         sourceUuid = $sourceUuid,
@@ -3044,6 +3088,7 @@ function saveMessageSync(
       isViewOnce,
       received_at,
       schemaVersion,
+      serverGuid,
       sent_at,
       source,
       sourceUuid,
@@ -3066,6 +3111,7 @@ function saveMessageSync(
       $isViewOnce,
       $received_at,
       $schemaVersion,
+      $serverGuid,
       $sent_at,
       $source,
       $sourceUuid,
@@ -3705,7 +3751,8 @@ async function getLastConversationActivity({
             'verified-change',
             'message-history-unsynced',
             'keychange',
-            'group-v1-migration'
+            'group-v1-migration',
+            'universal-timer-notification'
           )
         ) AND
         (
@@ -3755,7 +3802,8 @@ async function getLastConversationPreview({
             'profile-change',
             'verified-change',
             'message-history-unsynced',
-            'group-v1-migration'
+            'group-v1-migration',
+            'universal-timer-notification'
           )
         ) AND NOT
         (
@@ -4032,11 +4080,12 @@ function saveUnprocessedSync(data: UnprocessedType): string {
     source,
     sourceUuid,
     sourceDevice,
+    serverGuid,
     serverTimestamp,
     decrypted,
   } = data;
   if (!id) {
-    throw new Error('saveUnprocessed: id was falsey');
+    throw new Error('saveUnprocessedSync: id was falsey');
   }
 
   prepare(
@@ -4051,6 +4100,7 @@ function saveUnprocessedSync(data: UnprocessedType): string {
       source,
       sourceUuid,
       sourceDevice,
+      serverGuid,
       serverTimestamp,
       decrypted
     ) values (
@@ -4062,6 +4112,7 @@ function saveUnprocessedSync(data: UnprocessedType): string {
       $source,
       $sourceUuid,
       $sourceDevice,
+      $serverGuid,
       $serverTimestamp,
       $decrypted
     );
@@ -4075,27 +4126,12 @@ function saveUnprocessedSync(data: UnprocessedType): string {
     source: source || null,
     sourceUuid: sourceUuid || null,
     sourceDevice: sourceDevice || null,
+    serverGuid: serverGuid || null,
     serverTimestamp: serverTimestamp || null,
     decrypted: decrypted || null,
   });
 
   return id;
-}
-
-async function saveUnprocessed(data: UnprocessedType): Promise<string> {
-  return saveUnprocessedSync(data);
-}
-
-async function saveUnprocesseds(
-  arrayOfUnprocessed: Array<UnprocessedType>
-): Promise<void> {
-  const db = getInstance();
-
-  db.transaction(() => {
-    for (const unprocessed of arrayOfUnprocessed) {
-      assertSync(saveUnprocessedSync(unprocessed));
-    }
-  })();
 }
 
 async function updateUnprocessedAttempts(
@@ -4120,7 +4156,14 @@ function updateUnprocessedWithDataSync(
   data: UnprocessedUpdateType
 ): void {
   const db = getInstance();
-  const { source, sourceUuid, sourceDevice, serverTimestamp, decrypted } = data;
+  const {
+    source,
+    sourceUuid,
+    sourceDevice,
+    serverGuid,
+    serverTimestamp,
+    decrypted,
+  } = data;
 
   prepare(
     db,
@@ -4129,6 +4172,7 @@ function updateUnprocessedWithDataSync(
       source = $source,
       sourceUuid = $sourceUuid,
       sourceDevice = $sourceDevice,
+      serverGuid = $serverGuid,
       serverTimestamp = $serverTimestamp,
       decrypted = $decrypted
     WHERE id = $id;
@@ -4138,6 +4182,7 @@ function updateUnprocessedWithDataSync(
     source: source || null,
     sourceUuid: sourceUuid || null,
     sourceDevice: sourceDevice || null,
+    serverGuid: serverGuid || null,
     serverTimestamp: serverTimestamp || null,
     decrypted: decrypted || null,
   });
@@ -4244,7 +4289,7 @@ async function getNextAttachmentDownloadJobs(
       `
       SELECT json
       FROM attachment_downloads
-      WHERE pending = 0 AND timestamp < $timestamp
+      WHERE pending = 0 AND timestamp <= $timestamp
       ORDER BY timestamp DESC
       LIMIT $limit;
       `
@@ -4857,9 +4902,11 @@ async function removeAll(): Promise<void> {
 // Anything that isn't user-visible data
 async function removeAllConfiguration(): Promise<void> {
   const db = getInstance();
+  const patch: Partial<ConversationType> = { senderKeyInfo: undefined };
 
   db.transaction(() => {
-    db.exec(`
+    db.exec(
+      `
       DELETE FROM identityKeys;
       DELETE FROM items;
       DELETE FROM preKeys;
@@ -4868,7 +4915,13 @@ async function removeAllConfiguration(): Promise<void> {
       DELETE FROM signedPreKeys;
       DELETE FROM unprocessed;
       DELETE FROM jobs;
-    `);
+    `
+    );
+    db.prepare('UPDATE conversations SET json = json_patch(json, $patch);').run(
+      {
+        patch: JSON.stringify(patch),
+      }
+    );
   })();
 }
 
@@ -4938,6 +4991,29 @@ async function getMessagesWithFileAttachments(
     });
 
   return map(rows, row => jsonToObject(row.json));
+}
+
+async function getMessageServerGuidsForSpam(
+  conversationId: string
+): Promise<Array<string>> {
+  const db = getInstance();
+
+  // The server's maximum is 3, which is why you see `LIMIT 3` in this query. Note that we
+  //   use `pluck` here to only get the first column!
+  return db
+    .prepare<Query>(
+      `
+      SELECT serverGuid
+      FROM messages
+      WHERE conversationId = $conversationId
+      AND type = 'incoming'
+      AND serverGuid IS NOT NULL
+      ORDER BY received_at DESC, sent_at DESC
+      LIMIT 3;
+      `
+    )
+    .pluck(true)
+    .all({ conversationId });
 }
 
 function getExternalFilesForMessage(message: MessageType): Array<string> {
@@ -5293,4 +5369,27 @@ async function deleteJob(id: string): Promise<void> {
   const db = getInstance();
 
   db.prepare<Query>('DELETE FROM jobs WHERE id = $id').run({ id });
+}
+
+async function updateAllConversationColors(
+  conversationColor?: ConversationColorType,
+  customColorData?: {
+    id: string;
+    value: CustomColorType;
+  }
+): Promise<void> {
+  const db = getInstance();
+
+  db.prepare<Query>(
+    `
+    UPDATE conversations
+    SET json = JSON_PATCH(json, $patch);
+    `
+  ).run({
+    patch: JSON.stringify({
+      conversationColor: conversationColor || null,
+      customColor: customColorData?.value || null,
+      customColorId: customColorData?.id || null,
+    }),
+  });
 }

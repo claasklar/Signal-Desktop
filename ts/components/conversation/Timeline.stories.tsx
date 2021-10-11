@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import * as React from 'react';
+import { times } from 'lodash';
+import { v4 as uuid } from 'uuid';
 import { storiesOf } from '@storybook/react';
 import { text, boolean, number } from '@storybook/addon-knobs';
 import { action } from '@storybook/addon-actions';
@@ -15,6 +17,7 @@ import { getDefaultConversation } from '../../test-both/helpers/getDefaultConver
 import { LastSeenIndicator } from './LastSeenIndicator';
 import { TimelineLoadingRow } from './TimelineLoadingRow';
 import { TypingBubble } from './TypingBubble';
+import { ContactSpoofingType } from '../../util/contactSpoofing';
 
 const i18n = setupI18n('en', enMessages);
 
@@ -37,7 +40,7 @@ const items: Record<string, TimelineItemType> = {
       timestamp: Date.now(),
       author: {
         phoneNumber: '(202) 555-2001',
-        color: 'green',
+        color: 'forest',
       },
       text: '🔥',
     },
@@ -50,7 +53,7 @@ const items: Record<string, TimelineItemType> = {
       direction: 'incoming',
       timestamp: Date.now(),
       author: {
-        color: 'green',
+        color: 'forest',
       },
       text: 'Hello there from the new world! http://somewhere.com',
     },
@@ -75,7 +78,7 @@ const items: Record<string, TimelineItemType> = {
       direction: 'incoming',
       timestamp: Date.now(),
       author: {
-        color: 'red',
+        color: 'crimson',
       },
       text: 'Hello there from the new world!',
     },
@@ -161,7 +164,7 @@ const items: Record<string, TimelineItemType> = {
       timestamp: Date.now(),
       status: 'sent',
       author: {
-        color: 'pink',
+        color: 'plum',
       },
       text: '🔥',
     },
@@ -174,7 +177,7 @@ const items: Record<string, TimelineItemType> = {
       timestamp: Date.now(),
       status: 'read',
       author: {
-        color: 'pink',
+        color: 'plum',
       },
       text: 'Hello there from the new world! http://somewhere.com',
     },
@@ -224,6 +227,9 @@ const items: Record<string, TimelineItemType> = {
 } as any;
 
 const actions = () => ({
+  acknowledgeGroupMemberNameCollisions: action(
+    'acknowledgeGroupMemberNameCollisions'
+  ),
   clearChangedMessages: action('clearChangedMessages'),
   clearInvitedConversationsForNewlyCreatedGroup: action(
     'clearInvitedConversationsForNewlyCreatedGroup'
@@ -275,14 +281,16 @@ const actions = () => ({
   contactSupport: action('contactSupport'),
 
   closeContactSpoofingReview: action('closeContactSpoofingReview'),
+  reviewGroupMemberNameCollision: action('reviewGroupMemberNameCollision'),
   reviewMessageRequestNameCollision: action(
     'reviewMessageRequestNameCollision'
   ),
 
   onBlock: action('onBlock'),
-  onBlockAndDelete: action('onBlockAndDelete'),
+  onBlockAndReportSpam: action('onBlockAndReportSpam'),
   onDelete: action('onDelete'),
   onUnblock: action('onUnblock'),
+  removeMember: action('removeMember'),
 
   unblurAvatar: action('unblurAvatar'),
 });
@@ -298,6 +306,9 @@ const renderItem = (id: string) => (
     conversationId=""
     conversationAccepted
     renderContact={() => '*ContactName*'}
+    renderUniversalTimerNotification={() => (
+      <div>*UniversalTimerNotification*</div>
+    )}
     renderAudioAttachment={() => <div>*AudioAttachment*</div>}
     {...actions()}
   />
@@ -336,7 +347,7 @@ const renderLoadingRow = () => <TimelineLoadingRow state="loading" />;
 const renderTypingBubble = () => (
   <TypingBubble
     acceptedMessageRequest
-    color="red"
+    color="crimson"
     conversationType="direct"
     phoneNumber="+18005552222"
     i18n={i18n}
@@ -371,7 +382,7 @@ const createProps = (overrideProps: Partial<PropsType> = {}): PropsType => ({
     overrideProps.invitedContactsForNewlyCreatedGroup || [],
   warning: overrideProps.warning,
 
-  id: '',
+  id: uuid(),
   renderItem,
   renderLastSeenIndicator,
   renderHeroRow,
@@ -475,10 +486,27 @@ story.add('With invited contacts for a newly-created group', () => {
   return <Timeline {...props} />;
 });
 
-story.add('With "same name" warning', () => {
+story.add('With "same name in direct conversation" warning', () => {
   const props = createProps({
     warning: {
+      type: ContactSpoofingType.DirectConversationWithSameTitle,
       safeConversation: getDefaultConversation(),
+    },
+    items: [],
+  });
+
+  return <Timeline {...props} />;
+});
+
+story.add('With "same name in group conversation" warning', () => {
+  const props = createProps({
+    warning: {
+      type: ContactSpoofingType.MultipleGroupMembersWithSameTitle,
+      acknowledgedGroupNameCollisions: {},
+      groupNameCollisions: {
+        Alice: times(2, () => uuid()),
+        Bob: times(3, () => uuid()),
+      },
     },
     items: [],
   });

@@ -29,6 +29,7 @@ import { createBatcher } from '../util/batcher';
 import { assert } from '../util/assert';
 import { cleanDataForIpc } from './cleanDataForIpc';
 import { ReactionType } from '../types/Reactions';
+import { ConversationColorType, CustomColorType } from '../types/Colors';
 
 import {
   ConversationModelCollectionType,
@@ -139,12 +140,11 @@ const dataInterface: ClientInterface = {
   getSenderKeyById,
   removeAllSenderKeys,
   getAllSenderKeys,
+  removeSenderKeyById,
 
   createOrUpdateSession,
   createOrUpdateSessions,
   commitSessionsAndUnprocessed,
-  getSessionById,
-  getSessionsById,
   bulkAddSessions,
   removeSessionById,
   removeSessionsByConversation,
@@ -158,6 +158,7 @@ const dataInterface: ClientInterface = {
   updateConversation,
   updateConversations,
   removeConversation,
+  updateAllConversationColors,
 
   eraseStorageServiceStateFromConversations,
   getAllConversations,
@@ -170,6 +171,7 @@ const dataInterface: ClientInterface = {
   searchMessagesInConversation,
 
   getMessageCount,
+  hasUserInitiatedMessages,
   saveMessage,
   saveMessages,
   removeMessage,
@@ -201,8 +203,6 @@ const dataInterface: ClientInterface = {
   getUnprocessedCount,
   getAllUnprocessed,
   getUnprocessedById,
-  saveUnprocessed,
-  saveUnprocesseds,
   updateUnprocessedAttempts,
   updateUnprocessedWithData,
   updateUnprocessedsWithData,
@@ -238,6 +238,7 @@ const dataInterface: ClientInterface = {
   getMessagesNeedingUpgrade,
   getMessagesWithVisualMediaAttachments,
   getMessagesWithFileAttachments,
+  getMessageServerGuidsForSpam,
 
   getJobsInQueue,
   insertJob,
@@ -759,6 +760,9 @@ async function removeAllSenderKeys(): Promise<void> {
 async function getAllSenderKeys(): Promise<Array<SenderKeyType>> {
   return channels.getAllSenderKeys();
 }
+async function removeSenderKeyById(id: string): Promise<void> {
+  return channels.removeSenderKeyById(id);
+}
 
 // Sessions
 
@@ -773,16 +777,6 @@ async function commitSessionsAndUnprocessed(options: {
   unprocessed: Array<UnprocessedType>;
 }) {
   await channels.commitSessionsAndUnprocessed(options);
-}
-async function getSessionById(id: string) {
-  const session = await channels.getSessionById(id);
-
-  return session;
-}
-async function getSessionsById(id: string) {
-  const sessions = await channels.getSessionsById(id);
-
-  return sessions;
 }
 async function bulkAddSessions(array: Array<SessionType>) {
   await channels.bulkAddSessions(array);
@@ -981,6 +975,10 @@ async function searchMessagesInConversation(
 
 async function getMessageCount(conversationId?: string) {
   return channels.getMessageCount(conversationId);
+}
+
+async function hasUserInitiatedMessages(conversationId: string) {
+  return channels.hasUserInitiatedMessages(conversationId);
 }
 
 async function saveMessage(
@@ -1351,16 +1349,6 @@ async function getUnprocessedById(id: string) {
   return channels.getUnprocessedById(id);
 }
 
-async function saveUnprocessed(data: UnprocessedType) {
-  const id = await channels.saveUnprocessed(_cleanData(data));
-
-  return id;
-}
-
-async function saveUnprocesseds(arrayOfUnprocessed: Array<UnprocessedType>) {
-  await channels.saveUnprocesseds(_cleanData(arrayOfUnprocessed));
-}
-
 async function updateUnprocessedAttempts(id: string, attempts: number) {
   await channels.updateUnprocessedAttempts(id, attempts);
 }
@@ -1551,6 +1539,12 @@ async function getMessagesWithFileAttachments(
   });
 }
 
+function getMessageServerGuidsForSpam(
+  conversationId: string
+): Promise<Array<string>> {
+  return channels.getMessageServerGuidsForSpam(conversationId);
+}
+
 function getJobsInQueue(queueType: string): Promise<Array<StoredJob>> {
   return channels.getJobsInQueue(queueType);
 }
@@ -1561,4 +1555,17 @@ function insertJob(job: Readonly<StoredJob>): Promise<void> {
 
 function deleteJob(id: string): Promise<void> {
   return channels.deleteJob(id);
+}
+
+async function updateAllConversationColors(
+  conversationColor?: ConversationColorType,
+  customColorData?: {
+    id: string;
+    value: CustomColorType;
+  }
+): Promise<void> {
+  return channels.updateAllConversationColors(
+    conversationColor,
+    customColorData
+  );
 }
